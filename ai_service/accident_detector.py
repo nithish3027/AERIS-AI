@@ -267,7 +267,7 @@ class DashcamAccidentDetector:
             conf=self.conf_thresh,
             classes=self.vehicle_classes,
             verbose=False,
-            tracker="bytetrack.yaml",
+            tracker="botsort.yaml",
         )
 
         active_boxes = []

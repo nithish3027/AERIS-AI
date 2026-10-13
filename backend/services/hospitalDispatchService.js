@@ -334,13 +334,16 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
   }
 
   const userId = user._id || user.id || user.sub;
+  const userName = (user.details?.hospitalName || user.name || '').trim().toLowerCase();
+  const assignedName = (incident.dispatch?.assignedHospitalName || '').trim().toLowerCase();
 
   // RBAC: Hospital staff can update only their authorized assigned incidents; admin has full rights
   if (user.role === 'hospital') {
-    if (
-      !incident.dispatch?.assignedHospitalId ||
-      String(incident.dispatch.assignedHospitalId) !== String(userId)
-    ) {
+    const isOwner = (
+      (incident.dispatch?.assignedHospitalId && String(incident.dispatch.assignedHospitalId) === String(userId)) ||
+      (userName && assignedName && userName === assignedName)
+    );
+    if (!isOwner) {
       const error = new Error('Unauthorized: Hospital can update only its own assigned incidents.');
       error.status = 403;
       throw error;

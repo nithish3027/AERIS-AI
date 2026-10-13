@@ -9,3 +9,6 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 ai_service/.venv/
 ai_service/models/*.pt
+ai_service/snapshots/*
+!ai_service/snapshots/.gitkeep
+~$*

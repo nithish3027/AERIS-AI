@@ -990,7 +990,7 @@
       const hospitalResponse = dispatch.hospitalResponse || (hosp === 'Pending' ? 'PENDING' : hosp);
       const ambulanceId = dispatch.ambulanceId || 'None';
       const ambulanceStatus = dispatch.ambulanceStatus || 'NONE';
-      const eta = dispatch.etaMinutes != null ? `${dispatch.etaMinutes} min` : 'N/A';
+      const eta = dispatch.etaMinutes != null ? `${dispatch.etaMinutes} min` : 'Unknown';
       const policeStatus = inc.policeResponse?.status || pol;
       const dispatchTime = dispatch.dispatchedAt ? new Date(dispatch.dispatchedAt).toLocaleTimeString() : 'Not Dispatched';
 
@@ -1199,15 +1199,31 @@
       return;
     }
 
-    const currentUserId = state.user?._id || state.user?.id || '';
+    let tokenSub = '';
+    const token = sessionStorage.getItem('aerisToken');
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        tokenSub = payload.sub || '';
+      } catch (e) {}
+    }
+    const currentUserId = state.user?._id || state.user?.id || tokenSub || '';
+    const currentUserName = (state.user?.details?.hospitalName || state.user?.name || '').trim().toLowerCase();
     const isAdmin = state.user?.role === 'admin';
 
     container.innerHTML = visible.map((inc) => {
       const id = inc.accidentId || inc.id || inc._id;
       const dispatch = inc.dispatch || {};
       const assignedId = dispatch.assignedHospitalId ? String(dispatch.assignedHospitalId) : '';
-      const isAssignedToMe = assignedId && (assignedId === String(currentUserId) || isAdmin);
-      const isAssignedToOther = assignedId && !isAssignedToMe;
+      const assignedName = (dispatch.assignedHospitalName || '').trim().toLowerCase();
+      const isAssignedToMe = Boolean(
+        isAdmin ||
+        (assignedId && (
+          (currentUserId && assignedId === String(currentUserId)) ||
+          (currentUserName && assignedName && assignedName === currentUserName)
+        ))
+      );
+      const isAssignedToOther = Boolean(assignedId && !isAssignedToMe);
       const isUnassigned = !assignedId;
 
       const ambStatus = dispatch.ambulanceStatus || 'NONE';
@@ -1215,7 +1231,10 @@
       const eta = dispatch.etaMinutes != null ? `${dispatch.etaMinutes} min` : 'Unknown';
 
       // Find candidate details for this hospital
-      const myCandidate = (dispatch.candidates || []).find((c) => String(c.hospitalId) === String(currentUserId));
+      const myCandidate = (dispatch.candidates || []).find((c) =>
+        (currentUserId && String(c.hospitalId) === String(currentUserId)) ||
+        (currentUserName && (c.hospitalName || '').trim().toLowerCase() === currentUserName)
+      );
       const distInfo = myCandidate
         ? `${myCandidate.distanceKm} km away (~${myCandidate.travelTimeMinutes} min travel)`
         : 'Distance calculating...';

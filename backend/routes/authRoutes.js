@@ -8,7 +8,8 @@ const router = Router();
 const roles = new Set(['admin', 'police', 'hospital']);
 
 function userResponse(user) {
-  return { name: user.name, email: user.email, role: user.role, details: user.details };
+  const userId = (user._id || user.id || user.sub || '').toString();
+  return { id: userId, _id: userId, name: user.name, email: user.email, role: user.role, details: user.details };
 }
 
 function createToken(user) {
