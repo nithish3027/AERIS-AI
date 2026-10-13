@@ -8,7 +8,6 @@ from threading import Lock
 from typing import Any
 from collections import deque
 from datetime import datetime
-
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -60,7 +59,6 @@ def load_model() -> YOLO:
 
 
 class VehicleKinematicsTracker:
-    """Maintains spatial and temporal kinematic telemetry for tracked vehicles."""
     def __init__(self, track_id: int, max_history: int = 25):
         self.track_id = track_id
         self.history = deque(maxlen=max_history)
@@ -113,7 +111,7 @@ class VehicleKinematicsTracker:
 
 
 class VisualShockSensor:
-    """Monitors global optical flux to detect violent chassis impact shock."""
+
     def __init__(self, baseline_history: int = 45):
         self.prev_gray = None
         self.motion_history = deque(maxlen=baseline_history)
