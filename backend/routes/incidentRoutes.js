@@ -2,6 +2,7 @@ import { Router } from 'express';
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import multer from 'multer';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,9 +60,43 @@ router.post('/detect', allowRoles('admin'), upload.single('video'), async (req, 
       maxContentLength: Infinity,
     });
     keepVideo = response.data.accidentDetected === true;
+    let finalFileName = path.basename(req.file.path);
+
+    // If collision confirmed, auto-clip the video starting 20s before the accident moment
+    if (keepVideo && response.data.frame) {
+      const fps = Number(response.data.fps) || 30;
+      const collisionSec = response.data.collision_sec ?? (response.data.frame / fps);
+      const preCrashStart = Math.max(0, collisionSec - 20);
+      const clipDuration = 28; // 20s pre-crash approach + 8s aftermath
+      const clippedFileName = `clip-${finalFileName}`;
+      const clippedFilePath = path.join(uploadDirectory, clippedFileName);
+
+      try {
+        await new Promise((resolve, reject) => {
+          execFile('ffmpeg', [
+            '-ss', String(preCrashStart),
+            '-i', req.file.path,
+            '-t', String(clipDuration),
+            '-c', 'copy',
+            '-avoid_negative_ts', 'make_zero',
+            '-y', clippedFilePath,
+          ], (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+
+        // Remove full unclipped video to keep only the focused 20s pre-crash incident clip
+        await fs.unlink(req.file.path).catch(() => {});
+        finalFileName = clippedFileName;
+      } catch (trimError) {
+        console.warn('FFmpeg auto-trimming error, serving original file:', trimError.message);
+      }
+    }
+
     return res.json({
       ...response.data,
-      videoUrl: `/uploads/${path.basename(req.file.path)}`,
+      videoUrl: `/uploads/${finalFileName}`,
     });
   } catch (error) {
     const message = error.response?.data?.message || 'AI service is unavailable. Start the Python AI service and retry.';
@@ -97,6 +132,7 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
     const configuredRadius = Number(process.env.ALERT_RADIUS_KM || 25);
     const candidateHospitals = await findEligibleHospitals(latitude, longitude, configuredRadius);
 
+    const isAutoDispatched = Boolean(body.autoDispatched);
     const initialDispatch = {
       status: candidateHospitals.length > 0 ? 'ALERTED' : 'UNASSIGNED',
       assignedHospitalId: null,
@@ -107,10 +143,10 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
       candidates: candidateHospitals,
       timeline: [
         {
-          event: 'INCIDENT_CONFIRMED',
+          event: isAutoDispatched ? 'AUTO_DISPATCH_TIMEOUT_TRIGGERED' : 'INCIDENT_CONFIRMED',
           actorId: req.user?._id || null,
-          actorName: req.user?.name || 'Vision AI Engine',
-          actorRole: req.user?.role || 'admin',
+          actorName: isAutoDispatched ? 'AERIS Auto-Dispatch System (3s Timeout)' : (req.user?.name || 'Vision AI Engine'),
+          actorRole: isAutoDispatched ? 'system' : (req.user?.role || 'admin'),
           timestamp,
           details: {
             accidentId,
@@ -118,6 +154,7 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
             latitude,
             longitude,
             notifiedHospitalsCount: candidateHospitals.length,
+            autoDispatched: isAutoDispatched,
           },
         },
       ],
@@ -127,6 +164,7 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
       accidentId,
       id: accidentId,
       accidentDetected: true,
+      autoDispatched: isAutoDispatched,
       confidence,
       latitude,
       longitude,
@@ -135,6 +173,9 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
       videoUrl: videoMatch ? `/api/incidents/${accidentId}/video` : '',
       videoFileName: videoMatch?.[1] || '',
       frame: Number.isInteger(body.frame) ? body.frame : null,
+      fps: Number(body.fps) || 30,
+      collision_sec: Number.isFinite(Number(body.collision_sec)) ? Number(body.collision_sec) : (body.frame ? body.frame / 30 : null),
+      pre_crash_sec: Number.isFinite(Number(body.pre_crash_sec)) ? Number(body.pre_crash_sec) : 0,
       isDemo: body.isDemo === true,
       location: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
       time: timestamp.toLocaleTimeString('en-GB', { timeZone: 'UTC' }),

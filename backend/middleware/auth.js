@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import User, { getModelByRole } from '../models/User.js';
 
 export async function authenticate(req, res, next) {
-  const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const token = req.get('authorization')?.replace(/^Bearer\s+/i, '') || req.query?.token;
   if (!token) return res.status(401).json({ message: 'Please log in to continue.' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

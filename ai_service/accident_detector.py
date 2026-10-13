@@ -1,13 +1,4 @@
-"""
-AERIS AI Service - Dashcam Accident Detection Engine (V2 Enterprise Edition)
-Multi-Factor Collision Intelligence Engine:
-1. YOLOv8 Deep Object Detection & ByteTrack Kinematic Tracking
-2. Visual G-Sensor / Chassis Impact Shock Proxy (Optical Flux & Frame Dynamics)
-3. Ego Bumper Boundary Encroachment & Synchronized Physical Impact
-4. Physics-Gated V2V Collision Engine
-5. Warmup & Jump-Cut Rejection Filter
-6. Dynamic ADAS Threat State Machine
-"""
+
 from __future__ import annotations
 
 import os
@@ -22,7 +13,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-# Thread synchronization
+
 _model = None
 _model_lock = Lock()
 _inference_lock = Lock()
@@ -33,17 +24,19 @@ def _resolve_model_path() -> str:
     ai_dir = Path(__file__).resolve().parent
     candidates = [
         env_model,
-        str(ai_dir / "yolov8s.pt"),
         str(ai_dir / "yolov8n.pt"),
-        str(ai_dir.parent / "yolov8s.pt"),
+        str(ai_dir / "models" / "yolov8n.pt"),
         str(ai_dir.parent / "yolov8n.pt"),
-        "yolov8s.pt",
         "yolov8n.pt",
+        str(ai_dir / "yolov8s.pt"),
+        str(ai_dir / "models" / "yolov8s.pt"),
+        str(ai_dir.parent / "yolov8s.pt"),
+        "yolov8s.pt",
     ]
     for c in candidates:
         if c and Path(c).is_file():
             return str(Path(c).resolve())
-    return "yolov8s.pt"
+    return "yolov8n.pt"
 
 
 MODEL_PATH = _resolve_model_path()
@@ -56,6 +49,10 @@ def load_model() -> YOLO:
     if _model is None:
         with _model_lock:
             if _model is None:
+                import torch
+                if hasattr(torch, "set_num_threads"):
+                    cores = os.cpu_count() or 4
+                    torch.set_num_threads(max(1, min(cores, 8)))
                 model_file = _resolve_model_path()
                 print(f"[INFO] Loading YOLO model: {model_file}")
                 _model = YOLO(model_file)
@@ -157,6 +154,9 @@ class DashcamAccidentDetector:
         confidence_thresh: float = 0.30,
         detect_v2v: bool = False,
         snapshot_dir: Path | str = SNAPSHOT_DIR,
+        imgsz: int = 416,
+        tracker: str = "bytetrack.yaml",
+        frame_stride: int = 2,
     ):
         self.model = model or load_model()
         self.conf_thresh = confidence_thresh
@@ -164,6 +164,9 @@ class DashcamAccidentDetector:
         self.detect_v2v = detect_v2v
         self.snapshot_dir = str(snapshot_dir)
         os.makedirs(self.snapshot_dir, exist_ok=True)
+        self.imgsz = int(os.getenv("YOLO_IMGSZ", str(imgsz)))
+        self.tracker_config = os.getenv("YOLO_TRACKER", tracker)
+        self.frame_stride = int(os.getenv("FRAME_STRIDE", str(frame_stride)))
 
         self.shock_sensor = VisualShockSensor()
         self.trackers: dict[int, VehicleKinematicsTracker] = {}
@@ -261,50 +264,64 @@ class DashcamAccidentDetector:
         if self.frame_idx < 15:
             return frame, False, ""
 
-        results = self.model.track(
-            frame,
-            persist=True,
-            conf=self.conf_thresh,
-            classes=self.vehicle_classes,
-            verbose=False,
-            tracker="botsort.yaml",
+
+        has_approaching_threat = any(
+            tr.threat_level in ("APPROACHING", "CRITICAL_PROXIMITY") for tr in self.trackers.values()
+        )
+        should_run_yolo = (
+            (self.frame_idx % self.frame_stride == 0)
+            or is_impact_shock
+            or is_extreme_shock
+            or (diff >= 15.0)
+            or has_approaching_threat
         )
 
         active_boxes = []
         crash_detected_this_frame = False
         crash_reason = ""
 
-        if results and len(results) > 0 and results[0].boxes is not None and results[0].boxes.id is not None:
-            boxes = results[0].boxes.xyxy.cpu().numpy()
-            track_ids = results[0].boxes.id.int().cpu().numpy()
+        if should_run_yolo:
+            results = self.model.track(
+                frame,
+                persist=True,
+                conf=self.conf_thresh,
+                classes=self.vehicle_classes,
+                verbose=False,
+                tracker=self.tracker_config,
+                imgsz=self.imgsz,
+            )
 
-            for bbox, track_id in zip(boxes, track_ids):
-                x1, y1, x2, y2 = map(int, bbox)
-                if track_id not in self.trackers:
-                    self.trackers[track_id] = VehicleKinematicsTracker(track_id)
+            if results and len(results) > 0 and results[0].boxes is not None and results[0].boxes.id is not None:
+                boxes = results[0].boxes.xyxy.cpu().numpy()
+                track_ids = results[0].boxes.id.int().cpu().numpy()
 
-                tracker = self.trackers[track_id]
-                expansion_rate, ttc = tracker.update(self.frame_idx, (x1, y1, x2, y2), fps)
-                active_boxes.append(((x1, y1, x2, y2), track_id, tracker.velocity, tracker.speed))
+                for bbox, track_id in zip(boxes, track_ids):
+                    x1, y1, x2, y2 = map(int, bbox)
+                    if track_id not in self.trackers:
+                        self.trackers[track_id] = VehicleKinematicsTracker(track_id)
 
-                is_ego_crash, threat, reason = self.check_ego_collision(
-                    (x1, y1, x2, y2), tracker, is_impact_shock, diff, shock_ratio, w, h
-                )
-                if is_ego_crash:
-                    crash_detected_this_frame = True
-                    crash_reason = reason
+                    tracker = self.trackers[track_id]
+                    expansion_rate, ttc = tracker.update(self.frame_idx, (x1, y1, x2, y2), fps)
+                    active_boxes.append(((x1, y1, x2, y2), track_id, tracker.velocity, tracker.speed))
 
-            if self.detect_v2v and not crash_detected_this_frame:
-                v2v_crash, crash_pair, v2v_reason = self.check_v2v_collision(active_boxes)
-                if v2v_crash:
-                    crash_detected_this_frame = True
-                    crash_reason = v2v_reason
+                    is_ego_crash, threat, reason = self.check_ego_collision(
+                        (x1, y1, x2, y2), tracker, is_impact_shock, diff, shock_ratio, w, h
+                    )
+                    tracker.threat_level = threat
+                    if is_ego_crash:
+                        crash_detected_this_frame = True
+                        crash_reason = reason
+
+                if self.detect_v2v and not crash_detected_this_frame:
+                    v2v_crash, crash_pair, v2v_reason = self.check_v2v_collision(active_boxes)
+                    if v2v_crash:
+                        crash_detected_this_frame = True
+                        crash_reason = v2v_reason
 
         if not crash_detected_this_frame and is_extreme_shock:
             crash_detected_this_frame = True
             crash_reason = f"Catastrophic Ego Impact: Violent chassis jerk spike (diff={diff:.1f}, shock_ratio={shock_ratio:.1f})"
 
-        # Purge stale trackers
         stale_ids = [tid for tid, tr in self.trackers.items() if self.frame_idx - tr.last_seen_frame > 45]
         for tid in stale_ids:
             del self.trackers[tid]
@@ -318,6 +335,7 @@ class DashcamAccidentDetector:
 
 
 def _detect_accident(video_path: str | Path) -> dict[str, Any]:
+    import torch
     model = load_model()
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
@@ -333,31 +351,37 @@ def _detect_accident(video_path: str | Path) -> dict[str, Any]:
     confirmed_accident = None
 
     try:
-        while read_idx < 3000:
-            ok, frame = capture.read()
-            if not ok:
-                break
-            read_idx += 1
+        with torch.inference_mode():
+            while read_idx < 3000:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                read_idx += 1
 
-            _, is_crash, reason = detector.process_frame(frame, fps=fps)
-            if is_crash:
-                shock_val = detector.shock_sensor.shock_ratio
-                confidence = round(min(0.99, max(0.85, 0.75 + (shock_val * 0.015))), 2)
+                _, is_crash, reason = detector.process_frame(frame, fps=fps)
+                if is_crash:
+                    shock_val = detector.shock_sensor.shock_ratio
+                    confidence = round(min(0.99, max(0.85, 0.75 + (shock_val * 0.015))), 2)
 
-                timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-                snapshot_path = Path(detector.snapshot_dir) / f"accident_{timestamp_str}_frame{read_idx}.jpg"
-                cv2.imwrite(str(snapshot_path), frame)
+                    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    snapshot_path = Path(detector.snapshot_dir) / f"accident_{timestamp_str}_frame{read_idx}.jpg"
+                    cv2.imwrite(str(snapshot_path), frame)
 
-                confirmed_accident = {
-                    "accidentDetected": True,
-                    "confidence": float(confidence),
-                    "frame": int(read_idx),
-                    "message": f"Collision confirmed at frame {read_idx}: {reason}",
-                    "reason": reason,
-                    "shock_ratio": round(float(shock_val), 2),
-                    "snapshot": snapshot_path.name,
-                }
-                break
+                    collision_sec = round(read_idx / fps, 2)
+                    pre_crash_sec = max(0.0, round(collision_sec - 20.0, 2))
+                    confirmed_accident = {
+                        "accidentDetected": True,
+                        "confidence": float(confidence),
+                        "frame": int(read_idx),
+                        "fps": float(round(fps, 2)),
+                        "collision_sec": float(collision_sec),
+                        "pre_crash_sec": float(pre_crash_sec),
+                        "message": f"Collision confirmed at frame {read_idx}: {reason}",
+                        "reason": reason,
+                        "shock_ratio": round(float(shock_val), 2),
+                        "snapshot": snapshot_path.name,
+                    }
+                    break
     finally:
         capture.release()
 

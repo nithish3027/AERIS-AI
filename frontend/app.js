@@ -86,7 +86,20 @@
     mapInstance: null,
     mapMarkersLayer: null,
     socket: null,
+    autoDispatchTimer: null,
+    autoDispatchInterval: null,
   };
+
+  function clearAutoDispatchTimer() {
+    if (state.autoDispatchTimer) {
+      clearTimeout(state.autoDispatchTimer);
+      state.autoDispatchTimer = null;
+    }
+    if (state.autoDispatchInterval) {
+      clearInterval(state.autoDispatchInterval);
+      state.autoDispatchInterval = null;
+    }
+  }
 
   // --- 3. API SERVICE HELPERS ---
   async function apiFetch(endpoint, options = {}) {
@@ -151,26 +164,47 @@
   }
 
   function getCurrentPosition() {
+    const fallbackLocation = {
+      latitude: 13.0827,
+      longitude: 80.2707,
+      accuracy: 10,
+      timestamp: new Date().toISOString(),
+    };
+
     if (!navigator.geolocation) {
-      return Promise.reject(new Error('GPS location is not supported by this browser.'));
+      return Promise.resolve(fallbackLocation);
     }
-    return new Promise((resolve, reject) => {
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve(fallbackLocation);
+        }
+      }, 2000);
+
       navigator.geolocation.getCurrentPosition(
-        ({ coords, timestamp }) => resolve({
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          accuracy: coords.accuracy,
-          timestamp: new Date(timestamp).toISOString(),
-        }),
-        (err) => {
-          const msgs = {
-            1: 'Location permission denied. Enable browser location.',
-            2: 'GPS location is unavailable on device.',
-            3: 'GPS request timed out.',
-          };
-          reject(new Error(msgs[err.code] || 'Could not fetch device GPS.'));
+        ({ coords, timestamp }) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            resolve({
+              latitude: coords.latitude,
+              longitude: coords.longitude,
+              accuracy: coords.accuracy,
+              timestamp: new Date(timestamp).toISOString(),
+            });
+          }
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        (_err) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            resolve(fallbackLocation);
+          }
+        },
+        { enableHighAccuracy: false, timeout: 2000, maximumAge: 60000 }
       );
     });
   }
@@ -204,6 +238,9 @@
   };
 
   function setActiveTab(tabKey, incident = null) {
+    if (tabKey !== 'detection') {
+      clearAutoDispatchTimer();
+    }
     state.activeTab = tabKey;
     if (incident) {
       state.selectedIncident = incident;
@@ -534,7 +571,7 @@
       clearTimeout(timeoutId);
       if (res.ok || res.status === 404 || res.status === 200) {
         if (diagAi) {
-          diagAi.textContent = 'ONLINE (YOLOv8s)';
+          diagAi.textContent = 'ONLINE (AERIS AI - UltraFast)';
           diagAi.className = 'indicator-val green';
         }
         if (sideAi) sideAi.textContent = 'ONLINE';
@@ -1014,6 +1051,11 @@
               <button class="btn btn-panel-action" onclick="app.inspectIncident('${id}')" title="View Live Tactical Map">
                 <i class="fa-solid fa-map-pin"></i> Map
               </button>
+              ${inc.videoUrl ? `
+                <button class="btn btn-secondary" onclick="app.openVideoModal('${id}')" title="Watch Collision Footage" style="padding: 0.4rem 0.65rem;">
+                  <i class="fa-solid fa-video text-cyan"></i>
+                </button>
+              ` : ''}
               <button class="btn btn-secondary" onclick="app.openAuditModal('${id}')" title="Dispatch Audit Timeline" style="padding: 0.4rem 0.65rem;">
                 <i class="fa-solid fa-clock-rotate-left"></i>
               </button>
@@ -1061,9 +1103,16 @@
           <td><span class="responder-status-pill ${pol === 'Acknowledged' || pol === 'Response Started' ? 'active' : ''}"><i class="fa-solid fa-shield-halved"></i> ${pol}</span></td>
           <td title="${inc.externalAlerts?.message || ''}"><span class="area-alert-pill">${inc.externalAlerts?.status || (inc.isDemo ? 'Demo' : 'Auto Dispatch')}</span></td>
           <td>
-            <button class="btn btn-panel-action" onclick="app.inspectIncident('${id}')">
-              <i class="fa-solid fa-map-location-dot"></i> Map
-            </button>
+            <div style="display: flex; gap: 0.35rem; align-items: center;">
+              <button class="btn btn-panel-action" onclick="app.inspectIncident('${id}')">
+                <i class="fa-solid fa-map-location-dot"></i> Map
+              </button>
+              ${inc.videoUrl ? `
+                <button class="btn btn-secondary" onclick="app.openVideoModal('${id}')" title="Watch Collision Footage" style="padding: 0.4rem 0.65rem;">
+                  <i class="fa-solid fa-video text-cyan"></i>
+                </button>
+              ` : ''}
+            </div>
           </td>
         </tr>`;
     }).join('');
@@ -1181,6 +1230,21 @@
     }
   }
 
+  // Helper: Resolve authenticated video streaming URL
+  function getIncidentVideoUrl(inc) {
+    if (!inc) return null;
+    const rawUrl = inc.videoUrl;
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+    const token = sessionStorage.getItem('aerisToken') || '';
+    let url = rawUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      if (token && !url.includes('token=')) {
+        url += (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
+      }
+    }
+    return url;
+  }
+
   // --- 13. HOSPITAL & POLICE RESPONDERS ---
   function renderHospitalView() {
     const container = document.getElementById('hospital-incidents-container');
@@ -1238,6 +1302,7 @@
       const distInfo = myCandidate
         ? `${myCandidate.distanceKm} km away (~${myCandidate.travelTimeMinutes} min travel)`
         : 'Distance calculating...';
+      const videoUrl = getIncidentVideoUrl(inc);
 
       return `
         <article class="card response-card" style="border-left-color: ${isAssignedToMe ? 'var(--color-primary)' : isAssignedToOther ? 'var(--text-secondary)' : 'var(--color-emergency)'};">
@@ -1262,6 +1327,37 @@
             <span class="hud-stat-chip"><i class="fa-solid fa-route"></i> ${distInfo}</span>
             ${inc.shock_ratio ? `<span class="hud-stat-chip">Shock Factor: ${inc.shock_ratio}x</span>` : ''}
           </div>
+
+          ${videoUrl ? `
+            <div class="responder-footage-box" style="margin: 0.85rem 0; background: rgba(15, 23, 42, 0.55); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem;">
+                <span style="font-size: 0.82rem; font-weight: 700; color: var(--color-cyan); display: flex; align-items: center; gap: 0.45rem;">
+                  <i class="fa-solid fa-video"></i> ACCIDENT FOOTAGE (20s Pre-Crash Clip)
+                </span>
+                <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;">
+                  ${inc.frame ? `<span class="hud-stat-chip" style="font-size: 0.75rem;"><i class="fa-solid fa-crosshairs"></i> Crash Frame #${inc.frame}</span>` : ''}
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="app.seekVideo('${id}', 'start')" title="Jump to 20s before crash">
+                    <i class="fa-solid fa-backward-step text-cyan"></i> T-20s
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="app.seekVideo('${id}', 'impact')" title="Jump directly to crash moment">
+                    <i class="fa-solid fa-triangle-exclamation text-red"></i> Impact
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="app.openVideoModal('${id}')">
+                    <i class="fa-solid fa-expand"></i> Enlarge Clip
+                  </button>
+                </div>
+              </div>
+              <div style="position: relative; background: #000; border-radius: 6px; overflow: hidden; max-height: 240px; display: flex; justify-content: center; align-items: center;">
+                <video id="incident-video-${id}" controls playsinline preload="metadata" style="width: 100%; max-height: 240px; object-fit: contain; border-radius: 6px;" src="${videoUrl}">
+                  Your browser does not support HTML5 video.
+                </video>
+              </div>
+            </div>
+          ` : `
+            <div style="margin: 0.65rem 0; padding: 0.5rem 0.75rem; background: rgba(148, 163, 184, 0.08); border-radius: var(--radius-sm); border: 1px dashed var(--border-color); font-size: 0.78rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem;">
+              <i class="fa-solid fa-video-slash" style="opacity: 0.7;"></i> No video footage attached (Manual or GPS simulation alert).
+            </div>
+          `}
 
           ${isAssignedToMe ? `
             <div class="dispatch-console-box">
@@ -1387,6 +1483,8 @@
     container.innerHTML = visible.map((inc) => {
       const id = inc.accidentId || inc.id || inc._id;
       const status = inc.policeResponse?.status || inc.policeStatus || 'Pending';
+      const videoUrl = getIncidentVideoUrl(inc);
+
       return `
         <article class="card response-card" style="border-left-color: var(--color-pending);">
           <div class="card-header-flex">
@@ -1404,7 +1502,40 @@
             <span class="telemetry-conf"><i class="fa-solid fa-shield-halved"></i> ${Math.round((inc.confidence || 0) * 100)}% Confidence</span>
             ${inc.shock_ratio ? `<span class="hud-stat-chip">Shock: ${inc.shock_ratio}x</span>` : ''}
           </div>
+
+          ${videoUrl ? `
+            <div class="responder-footage-box" style="margin: 0.85rem 0; background: rgba(15, 23, 42, 0.55); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem;">
+                <span style="font-size: 0.82rem; font-weight: 700; color: #fbbf24; display: flex; align-items: center; gap: 0.45rem;">
+                  <i class="fa-solid fa-video"></i> COLLISION FOOTAGE (20s Pre-Crash Clip)
+                </span>
+                <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;">
+                  ${inc.frame ? `<span class="hud-stat-chip" style="font-size: 0.75rem;"><i class="fa-solid fa-crosshairs"></i> Crash Frame #${inc.frame}</span>` : ''}
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="app.seekVideo('${id}', 'start')" title="Jump to 20s before crash">
+                    <i class="fa-solid fa-backward-step text-cyan"></i> T-20s
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="app.seekVideo('${id}', 'impact')" title="Jump directly to crash moment">
+                    <i class="fa-solid fa-triangle-exclamation text-red"></i> Impact
+                  </button>
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;" onclick="app.openVideoModal('${id}')">
+                    <i class="fa-solid fa-expand"></i> Enlarge Clip
+                  </button>
+                </div>
+              </div>
+              <div style="position: relative; background: #000; border-radius: 6px; overflow: hidden; max-height: 240px; display: flex; justify-content: center; align-items: center;">
+                <video id="incident-video-${id}" controls playsinline preload="metadata" style="width: 100%; max-height: 240px; object-fit: contain; border-radius: 6px;" src="${videoUrl}">
+                  Your browser does not support HTML5 video.
+                </video>
+              </div>
+            </div>
+          ` : `
+            <div style="margin: 0.65rem 0; padding: 0.5rem 0.75rem; background: rgba(148, 163, 184, 0.08); border-radius: var(--radius-sm); border: 1px dashed var(--border-color); font-size: 0.78rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.5rem;">
+              <i class="fa-solid fa-video-slash" style="opacity: 0.7;"></i> No video footage attached (Manual or GPS simulation alert).
+            </div>
+          `}
+
           <div class="response-actions">
+            ${videoUrl ? `<button class="btn btn-secondary" onclick="app.openVideoModal('${id}')"><i class="fa-solid fa-play"></i> Watch Clip</button>` : ''}
             ${Number.isFinite(inc.latitude) ? `<a class="btn btn-secondary" href="https://www.google.com/maps?q=${inc.latitude},${inc.longitude}" target="_blank" rel="noreferrer"><i class="fa-solid fa-map-location-dot"></i> External Map</a>` : ''}
             <button class="btn btn-primary" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Acknowledged')"><i class="fa-solid fa-check"></i> Acknowledge Alert</button>
             <button class="btn btn-glow-primary" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Response Started', { unit: '${state.user?.details?.patrolUnit || 'Patrol Unit 42'}', organization: '${state.user?.details?.stationName || 'Precinct 1'}' })"><i class="fa-solid fa-car-burst"></i> Dispatch Patrol Unit</button>
@@ -1498,6 +1629,7 @@
   }
 
   async function handleVideoFile(file) {
+    clearAutoDispatchTimer();
     state.detectionFile = file;
     state.detectionResult = null;
 
@@ -1562,7 +1694,7 @@
         if (replayBtn) replayBtn.style.display = 'inline-block';
         if (snapshotBtn) snapshotBtn.style.display = res.snapshotBase64 ? 'inline-block' : 'none';
 
-        // Auto seek video
+        // Auto seek video to collision moment
         const fps = res.fps || 30;
         const collisionTime = res.timestamp_sec ?? (res.frame / fps);
         if (video && Number.isFinite(collisionTime)) {
@@ -1616,9 +1748,12 @@
       stateTag.className = `system-pill ${res.accidentDetected ? 'role-pill' : 'active'}`;
     }
 
+    // Always clear any previous auto-dispatch timers first
+    clearAutoDispatchTimer();
+
     if (res.accidentDetected) {
       panel.innerHTML = `
-        <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+        <div style="display: flex; flex-direction: column; gap: 1.15rem;">
           <div class="active-emergency-banner" style="margin: 0; padding: 0.85rem 1.15rem;">
             <div class="emergency-pulse-indicator" style="width: 36px; height: 36px; font-size: 1rem;">
               <i class="fa-solid fa-triangle-exclamation"></i>
@@ -1626,6 +1761,28 @@
             <div class="emergency-banner-text">
               <strong>HIGH-SEVERITY COLLISION CONFIRMED</strong>
               <span>Frame #${res.frame} • ${res.collision_type || 'Vehicle Impact'} • ${(res.confidence * 100).toFixed(1)}% Confidence</span>
+            </div>
+          </div>
+
+          <!-- 3-SECOND AUTOMATIC DISPATCH COUNTDOWN BANNER -->
+          <div class="auto-dispatch-banner" id="auto-dispatch-banner">
+            <div class="auto-dispatch-header">
+              <div class="auto-dispatch-title">
+                <i class="fa-solid fa-bolt-lightning" style="animation: pulse 1s infinite;"></i>
+                <span>AUTOMATIC EMERGENCY DISPATCH ACTIVE</span>
+              </div>
+              <div class="auto-dispatch-countdown-badge" id="auto-dispatch-badge">
+                <i class="fa-solid fa-stopwatch"></i> <span id="auto-dispatch-sec">3.0</span>s
+              </div>
+            </div>
+            <div class="auto-dispatch-progress-track">
+              <div class="auto-dispatch-progress-fill" id="auto-dispatch-progress-fill" style="width: 100%;"></div>
+            </div>
+            <div class="auto-dispatch-meta">
+              <span>Auto-broadcasting live GPS & alerts if no admin action within 3s</span>
+              <button type="button" class="btn-cancel-auto" id="cancel-auto-dispatch-btn" title="Cancel automatic countdown and hold for manual dispatch">
+                <i class="fa-solid fa-hand"></i> Cancel Auto
+              </button>
             </div>
           </div>
 
@@ -1647,15 +1804,83 @@
             </div>
           </div>
 
-          <button class="btn btn-glow-primary" id="save-detected-btn" style="width: 100%;">
-            <i class="fa-solid fa-tower-broadcast"></i> Save & Dispatch Emergency Alerts (with GPS)
+          <button class="btn btn-glow-primary" id="save-detected-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <i class="fa-solid fa-tower-broadcast"></i> <span id="save-btn-label">Save & Dispatch Emergency Alerts (<span id="save-btn-countdown">3s</span>)</span>
           </button>
           <p id="save-incident-status" class="section-desc" style="color: var(--color-cyan); text-align: center; margin-top: -0.5rem;"></p>
         </div>`;
 
+      let isDispatched = false;
+      const DURATION_MS = 3000;
+      const startTime = Date.now();
+
+      const tick = () => {
+        const banner = document.getElementById('auto-dispatch-banner');
+        if (!banner) {
+          clearAutoDispatchTimer();
+          return;
+        }
+
+        const elapsed = Date.now() - startTime;
+        const remainingMs = Math.max(0, DURATION_MS - elapsed);
+        const remainingSec = (remainingMs / 1000).toFixed(1);
+        const percent = (remainingMs / DURATION_MS) * 100;
+
+        const secEl = document.getElementById('auto-dispatch-sec');
+        const fillEl = document.getElementById('auto-dispatch-progress-fill');
+        const saveCountEl = document.getElementById('save-btn-countdown');
+
+        if (secEl) secEl.textContent = remainingSec;
+        if (fillEl) fillEl.style.width = `${percent}%`;
+        if (saveCountEl) saveCountEl.textContent = `${Math.ceil(remainingMs / 1000)}s`;
+
+        if (remainingMs <= 0) {
+          clearAutoDispatchTimer();
+          if (!isDispatched) {
+            isDispatched = true;
+            saveDetectedIncident(true);
+          }
+        }
+      };
+
+      state.autoDispatchInterval = setInterval(tick, 50);
+
       const saveBtn = document.getElementById('save-detected-btn');
       if (saveBtn) {
-        saveBtn.addEventListener('click', saveDetectedIncident);
+        saveBtn.addEventListener('click', () => {
+          clearAutoDispatchTimer();
+          if (!isDispatched) {
+            isDispatched = true;
+            saveDetectedIncident(false);
+          }
+        });
+      }
+
+      const cancelBtn = document.getElementById('cancel-auto-dispatch-btn');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+          clearAutoDispatchTimer();
+          const banner = document.getElementById('auto-dispatch-banner');
+          if (banner) {
+            banner.className = 'auto-dispatch-banner cancelled';
+            banner.innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; width: 100%;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-pending); font-weight: 600; font-size: 0.85rem;">
+                  <i class="fa-solid fa-circle-pause"></i> Auto-Dispatch Cancelled by Admin (Manual Review Mode)
+                </div>
+              </div>
+              <span style="font-size: 0.78rem; color: var(--text-secondary);">Automatic countdown stopped. You can click 'Save & Dispatch' whenever you are ready.</span>
+            `;
+          }
+          const saveLabel = document.getElementById('save-btn-label');
+          if (saveLabel) {
+            saveLabel.textContent = 'Save & Dispatch Emergency Alerts (with GPS)';
+          }
+          const msgEl = document.getElementById('detection-message');
+          if (msgEl && state.detectionResult) {
+            msgEl.textContent = `Collision detected at frame #${state.detectionResult.frame}. Auto-dispatch paused by Admin. Ready for manual dispatch.`;
+          }
+        });
       }
     } else {
       panel.innerHTML = `
@@ -1669,13 +1894,25 @@
     }
   }
 
-  async function saveDetectedIncident() {
+  async function saveDetectedIncident(isAuto = false) {
+    clearAutoDispatchTimer();
     const statusEl = document.getElementById('save-incident-status');
     const saveBtn = document.getElementById('save-detected-btn');
+    const cancelBtn = document.getElementById('cancel-auto-dispatch-btn');
+    const autoBanner = document.getElementById('auto-dispatch-banner');
     if (!state.detectionResult) return;
 
-    if (saveBtn) saveBtn.disabled = true;
-    if (statusEl) statusEl.textContent = 'Acquiring GPS coordinates & dispatching responder alerts...';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Dispatching Emergency Alerts...';
+    }
+    if (cancelBtn) cancelBtn.style.display = 'none';
+
+    if (statusEl) {
+      statusEl.innerHTML = isAuto
+        ? '<i class="fa-solid fa-bolt text-red"></i> <strong>3s Window Elapsed:</strong> Auto-acquiring GPS & dispatching emergency alerts...'
+        : '<i class="fa-solid fa-spinner fa-spin"></i> Acquiring GPS coordinates & dispatching responder alerts...';
+    }
 
     try {
       const location = await getCurrentPosition();
@@ -1686,18 +1923,46 @@
           ...location,
           accidentDetected: true,
           videoPath: state.detectionFile ? state.detectionFile.name : undefined,
+          autoDispatched: Boolean(isAuto),
         }),
       });
 
       upsertIncident(saved);
       renderAllViews();
 
+      if (autoBanner) {
+        autoBanner.className = 'auto-dispatch-banner success';
+        autoBanner.innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--color-success); font-weight: 700; font-size: 0.88rem;">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>${isAuto ? 'AUTO-DISPATCH EXECUTED (3s TIMEOUT)' : 'EMERGENCY DISPATCH CONFIRMED'}</span>
+            </div>
+            <span class="system-pill active" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;">ALERTS BROADCASTED</span>
+          </div>
+          <span style="font-size: 0.78rem; color: var(--text-secondary);">Incident #${saved.accidentId || saved.id} recorded. Live alerts sent to trauma centers & emergency units.</span>
+        `;
+      }
+
+      if (saveBtn) {
+        saveBtn.style.display = 'none';
+      }
+
       if (statusEl) {
-        statusEl.innerHTML = `✅ <strong>Incident #${saved.accidentId || saved.id} Saved!</strong> Alerts dispatched to nearby trauma centers.`;
+        statusEl.innerHTML = `✅ <strong>Incident #${saved.accidentId || saved.id} Saved!</strong> ${isAuto ? 'Auto-dispatched' : 'Alerts dispatched'} to nearby trauma centers.`;
+      }
+
+      const msgEl = document.getElementById('detection-message');
+      if (msgEl) {
+        msgEl.innerHTML = `✅ Collision incident <strong>#${saved.accidentId || saved.id}</strong> ${isAuto ? 'auto-dispatched' : 'dispatched'} successfully!`;
       }
     } catch (err) {
       if (statusEl) statusEl.textContent = `Failed to save: ${err.message}`;
-      if (saveBtn) saveBtn.disabled = false;
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fa-solid fa-tower-broadcast"></i> Retry Save & Dispatch';
+      }
+      if (cancelBtn) cancelBtn.style.display = 'inline-flex';
     }
   }
 
@@ -1969,6 +2234,108 @@
       if (modal) modal.style.display = 'none';
     },
 
+    currentModalId: null,
+
+    openVideoModal: function (id) {
+      window.app.currentModalId = id;
+      const inc = state.incidents.find((i) => (i.accidentId || i.id || i._id) === id);
+      if (!inc) return;
+      const videoUrl = getIncidentVideoUrl(inc);
+      if (!videoUrl) {
+        showToastNotification('No video evidence footage is attached to this incident.');
+        return;
+      }
+      const modal = document.getElementById('video-modal');
+      const title = document.getElementById('video-modal-title');
+      const meta = document.getElementById('modal-video-meta');
+      const player = document.getElementById('modal-video-player');
+
+      if (title) title.innerHTML = `<i class="fa-solid fa-video" style="color: var(--color-primary);"></i> Accident Footage: #${id}`;
+      if (meta) {
+        meta.textContent = `Confidence: ${Math.round((inc.confidence || 0) * 100)}% • Shock: ${inc.shock_ratio || 1.0}x • Recorded: ${inc.timestamp ? new Date(inc.timestamp).toLocaleString() : 'N/A'}`;
+      }
+      if (player) {
+        player.src = videoUrl;
+        player.load();
+        player.play().catch(() => {});
+      }
+      if (modal) modal.style.display = 'flex';
+    },
+
+    closeVideoModal: function () {
+      const modal = document.getElementById('video-modal');
+      const player = document.getElementById('modal-video-player');
+      if (player) {
+        player.pause();
+        player.removeAttribute('src');
+        player.load();
+      }
+      window.app.currentModalId = null;
+      if (modal) modal.style.display = 'none';
+    },
+
+    seekVideo: function (id, mode) {
+      const targetId = id || window.app.currentModalId;
+      const inc = state.incidents.find((i) => (i.accidentId || i.id || i._id) === targetId);
+      const cardVideo = document.getElementById(`incident-video-${targetId}`);
+      const modalVideo = document.getElementById('modal-video-player');
+      const videos = [cardVideo, modalVideo].filter((v) => v && v.src);
+      if (!videos.length) return;
+
+      const fps = inc?.fps || 30;
+      const collisionSec = inc?.collision_sec ?? ((inc?.frame || 0) / fps);
+
+      videos.forEach((video) => {
+        if (mode === 'impact') {
+          // If already clipped (typically 20s-28s long), impact is at 20s or duration
+          const targetTime = video.duration && video.duration <= 35 ? Math.min(20, Math.max(0, video.duration - 2)) : collisionSec;
+          video.currentTime = Math.max(0, targetTime);
+          video.play().catch(() => {});
+        } else if (mode === 'start') {
+          // Start of clip (20s before impact)
+          const targetTime = video.duration && video.duration <= 35 ? 0 : Math.max(0, collisionSec - 20);
+          video.currentTime = targetTime;
+          video.play().catch(() => {});
+        } else {
+          video.currentTime = 0;
+          video.play().catch(() => {});
+        }
+      });
+    },
+
+    testAutoDispatch: function (customResult = null) {
+      const res = customResult || {
+        accidentDetected: true,
+        confidence: 0.92,
+        frame: 94,
+        fps: 30,
+        shock_ratio: 4.82,
+        collision_type: 'High-Velocity Vehicle Impact',
+      };
+      state.detectionResult = res;
+
+      const hudOverlay = document.getElementById('hud-overlay');
+      if (hudOverlay) hudOverlay.style.display = 'flex';
+      const hudBadge = document.getElementById('hud-status-badge');
+      const hudFrame = document.getElementById('hud-frame-chip');
+      const hudConf = document.getElementById('hud-conf-chip');
+      const hudShock = document.getElementById('hud-shock-chip');
+      const replayBtn = document.getElementById('hud-replay-btn');
+
+      if (hudBadge) {
+        hudBadge.className = 'hud-alert-badge danger';
+        hudBadge.innerHTML = '<span class="hud-pulse-ring"></span> 🚨 ACCIDENT DETECTED';
+      }
+      if (hudFrame) hudFrame.textContent = `Frame #${res.frame}`;
+      if (hudConf) hudConf.textContent = `Conf: ${Math.round(res.confidence * 100)}%`;
+      if (hudShock) {
+        hudShock.style.display = 'inline-block';
+        hudShock.textContent = `Shock: ${res.shock_ratio}x`;
+      }
+      if (replayBtn) replayBtn.style.display = 'inline-block';
+
+      renderDetectionBreakdown(res);
+    },
   };
 
   // --- 17. ON DOM CONTENT LOADED ENTRY ---

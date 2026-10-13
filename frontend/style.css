@@ -1981,3 +1981,114 @@ input, select, textarea {
     display: none;
   }
 }
+
+/* ==========================================================================
+   AUTO-DISPATCH EMERGENCY COUNTDOWN COMPONENT
+   ========================================================================== */
+.auto-dispatch-banner {
+  background: #FFF5F5;
+  border: 1px solid rgba(217, 83, 79, 0.4);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  box-shadow: 0 2px 8px rgba(217, 83, 79, 0.08);
+  transition: all 0.25s ease;
+}
+
+.auto-dispatch-banner.cancelled {
+  background: #FFFBEB;
+  border-color: rgba(217, 154, 37, 0.4);
+  box-shadow: none;
+}
+
+.auto-dispatch-banner.success {
+  background: #F0FDF4;
+  border-color: rgba(39, 134, 83, 0.4);
+  box-shadow: 0 2px 8px rgba(39, 134, 83, 0.08);
+}
+
+.auto-dispatch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.auto-dispatch-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--color-emergency);
+  letter-spacing: 0.02em;
+}
+
+.auto-dispatch-title i {
+  color: var(--color-emergency);
+  font-size: 0.95rem;
+}
+
+.auto-dispatch-countdown-badge {
+  background: var(--color-emergency);
+  color: #FFFFFF;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  box-shadow: 0 2px 4px rgba(217, 83, 79, 0.3);
+}
+
+.auto-dispatch-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(217, 83, 79, 0.15);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.auto-dispatch-progress-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #E53E3E 0%, #D9534F 100%);
+  border-radius: 999px;
+  transition: width 0.05s linear;
+}
+
+.auto-dispatch-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.btn-cancel-auto {
+  background: #FFFFFF;
+  color: var(--color-emergency);
+  border: 1px solid rgba(217, 83, 79, 0.4);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-cancel-auto:hover {
+  background: #FEE2E2;
+  border-color: var(--color-emergency);
+  color: var(--color-emergency-hover);
+}
+
