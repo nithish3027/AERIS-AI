@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+backend/.env
+.venv/
+__pycache__/
+*.py[cod]
+backend/uploads/*
+!backend/uploads/.gitkeep
+ai_service/.venv/
+ai_service/models/*.pt

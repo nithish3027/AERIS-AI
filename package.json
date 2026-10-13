@@ -1,0 +1,22 @@
+{
+  "name": "aeris-accident-detection",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "install:backend": "npm --prefix backend install",
+    "install:frontend": "npm --prefix frontend install",
+    "dev": "concurrently --names \"Backend,Frontend\" --prefix-colors \"yellow.bold,magenta.bold\" --restart-tries 3 \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:all": "concurrently --names \"Backend,Frontend\" --prefix-colors \"yellow.bold,magenta.bold\" --restart-tries 3 \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:full": "concurrently --names \"AI,Backend,Frontend\" --prefix-colors \"cyan.bold,yellow.bold,magenta.bold\" --restart-tries 3 \"npm run ai\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "ai": "powershell -Command \"if (Test-Path 'ai_service/app.py') { .venv\\Scripts\\python.exe ai_service/app.py } else { Write-Host 'AI service folder is not present yet - waiting for model attachment.' }\"",
+    "kill:ports": "powershell -Command \"@(5000,5173,8000) | ForEach-Object { $port=$_; $r=netstat -ano | Select-String \\\":$port .*LISTEN\\\"; if($r){ $r | ForEach-Object { $pidNum=($_ -split '\\s+')[-1].Trim(); if($pidNum -match '^\\d+$'){ taskkill /F /PID $pidNum } } } }\"",
+    "restart:full": "npm run kill:ports && npm run dev:full",
+    "build": "npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

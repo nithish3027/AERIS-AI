@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AERIS — Accident Emergency Response System</title>
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome 6 Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Leaflet Map CSS (Local) -->
+  <link rel="stylesheet" href="/leaflet.css" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233974CE'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 6c1.4 0 2.5 1.1 2.5 2.5 0 .8-.4 1.5-1 1.9v3.6h-3V11.4c-.6-.4-1-1.1-1-1.9C9.5 8.1 10.6 7 12 7z'/%3E%3C/svg%3E">
+
+  <!-- Clean Operations Stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- =========================================================================
+       1. AUTHENTICATION VIEW (Login & Sign Up)
+       ========================================================================= -->
+  <div id="auth-view" class="simple-auth-container">
+    <div class="simple-auth-box">
+      <!-- Header -->
+      <div class="simple-auth-header">
+        <h2>AERIS</h2>
+        <p>Accident Emergency Response System</p>
+      </div>
+
+      <!-- Role Selection -->
+      <div class="simple-role-buttons">
+        <button type="button" class="role-btn active-admin" data-role="admin" id="role-btn-admin">Admin</button>
+        <button type="button" class="role-btn" data-role="hospital" id="role-btn-hospital">Hospital</button>
+        <button type="button" class="role-btn" data-role="police" id="role-btn-police">Police</button>
+      </div>
+
+      <!-- Quick Demo 1-Click Buttons -->
+      <div class="demo-role-quickbar">
+        <button type="button" class="demo-chip-btn" data-demo="police" title="Fill Perambalur Police credentials">
+          <i class="fa-solid fa-shield-halved" style="color: #3974CE;"></i> Police Demo
+        </button>
+        <button type="button" class="demo-chip-btn" data-demo="hospital" title="Fill City Hospital credentials">
+          <i class="fa-solid fa-truck-medical" style="color: #278653;"></i> Hospital Demo
+        </button>
+        <button type="button" class="demo-chip-btn" data-demo="admin" title="Fill AERIS Admin credentials">
+          <i class="fa-solid fa-user-gear" style="color: #64748B;"></i> Admin Demo
+        </button>
+      </div>
+
+      <!-- Form Title -->
+      <h3 class="form-title" id="auth-form-title">ADMIN LOGIN</h3>
+
+      <!-- Error Message Box -->
+      <div class="simple-error" id="auth-error" style="display: none;"></div>
+
+      <!-- Authentication Form -->
+      <form id="auth-form" class="simple-form">
+        <!-- Sign Up Only: Full Name -->
+        <div class="input-field auth-signup-only" style="display: none;">
+          <label>Full Name</label>
+          <input type="text" id="auth-name" placeholder="Enter full name" />
+        </div>
+
+        <!-- Official Email -->
+        <div class="input-field">
+          <label>Official Email Address</label>
+          <input type="email" id="auth-email" placeholder="name@agency.gov" required />
+        </div>
+
+        <!-- Password -->
+        <div class="input-field">
+          <label>Password</label>
+          <input type="password" id="auth-password" placeholder="••••••••" required />
+        </div>
+
+        <!-- Sign Up Only: Confirm Password -->
+        <div class="input-field auth-signup-only" style="display: none;">
+          <label>Confirm Password</label>
+          <input type="password" id="auth-confirm-password" placeholder="••••••••" />
+        </div>
+
+        <!-- Role: Admin Access Code -->
+        <div class="input-field auth-signup-only role-field-admin" style="display: none;">
+          <label>Admin Security Code</label>
+          <input type="text" id="auth-admin-code" placeholder="e.g. ADM-9982" />
+        </div>
+
+        <!-- Role: Hospital Fields -->
+        <div class="auth-signup-only role-field-hospital" style="display: none;">
+          <div class="input-field">
+            <label>Hospital / Trauma Center Name</label>
+            <input type="text" id="auth-hosp-name" placeholder="e.g. City General Trauma Center" />
+          </div>
+          <div class="form-row" style="margin-top: 0.65rem;">
+            <div class="input-field">
+              <label>License / Reg No</label>
+              <input type="text" id="auth-hosp-reg" placeholder="HSP-4401" />
+            </div>
+            <div class="input-field">
+              <label>Emergency Contact Phone</label>
+              <input type="tel" id="auth-hosp-phone" placeholder="+919876543210" />
+            </div>
+          </div>
+          <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.65rem; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer;">
+            <input type="checkbox" id="auth-hosp-consent" />
+            Authorize automated emergency notifications within 5 km radius
+          </label>
+        </div>
+
+        <!-- Role: Police Fields -->
+        <div class="auth-signup-only role-field-police" style="display: none;">
+          <div class="input-field">
+            <label>Police Station / Precinct Name</label>
+            <input type="text" id="auth-police-station" placeholder="e.g. Perambalur Traffic Police" />
+          </div>
+          <div class="form-row" style="margin-top: 0.65rem;">
+            <div class="input-field">
+              <label>Officer / Badge ID</label>
+              <input type="text" id="auth-police-badge" placeholder="POL-461" />
+            </div>
+            <div class="input-field">
+              <label>Dispatch Contact Phone</label>
+              <input type="tel" id="auth-police-phone" placeholder="+919876543210" />
+            </div>
+          </div>
+          <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.65rem; font-size: 0.78rem; color: var(--text-secondary); cursor: pointer;">
+            <input type="checkbox" id="auth-police-consent" />
+            Authorize automated tactical emergency traffic dispatch alerts
+          </label>
+        </div>
+
+        <!-- Submit Button -->
+        <button type="submit" class="simple-submit-btn" id="auth-submit-btn">
+          Sign In to Console
+        </button>
+      </form>
+
+      <!-- Toggle Login / Sign Up -->
+      <div class="simple-toggle-box">
+        <span id="auth-toggle-prompt">Don't have an agency account?</span>
+        <button type="button" class="toggle-link" id="auth-toggle-btn">Sign Up</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       2. APPLICATION SHELL LAYOUT (Sidebar + Main Content)
+       ========================================================================= -->
+  <div id="app-layout" class="app-layout" style="display: none;">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-shield-badge">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <div>
+            <h2 class="logo-title">AERIS</h2>
+            <p class="logo-sub">Emergency Operations</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="nav-links">
+        <div class="nav-group-title">OPERATIONS</div>
+
+        <button class="nav-btn active" data-tab="home" id="nav-btn-home">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-table-cells-large"></i></div>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-btn" data-tab="alerts" id="nav-btn-alerts">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-bell"></i></div>
+          <span>Alerts</span>
+          <span class="nav-badge-pill red" id="sidebar-alerts-badge" style="display: none;">0</span>
+        </button>
+
+        <button class="nav-btn" data-tab="incidents" id="nav-btn-incidents">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-clipboard-list"></i></div>
+          <span>Incidents</span>
+          <span class="nav-badge-pill slate" id="sidebar-incidents-badge">0</span>
+        </button>
+
+        <button class="nav-btn" data-tab="location" id="nav-btn-location">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-map-location-dot"></i></div>
+          <span>Live Tactical Map</span>
+        </button>
+
+        <div class="nav-group-title responder-group-title">RESPONDER COORDINATION</div>
+
+        <button class="nav-btn nav-role-hospital" data-tab="hospital" id="nav-btn-hospital">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-truck-medical"></i></div>
+          <span>Hospital Response</span>
+        </button>
+
+        <button class="nav-btn nav-role-police" data-tab="police" id="nav-btn-police">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-shield-halved"></i></div>
+          <span>Police Dispatch</span>
+        </button>
+
+        <div class="nav-group-title admin-group-title">SYSTEM</div>
+
+        <button class="nav-btn nav-role-detection" data-tab="detection" id="nav-btn-detection">
+          <div class="nav-icon-wrap"><i class="fa-solid fa-video"></i></div>
+          <span>Accident Detection</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Footer: User Profile & Sign Out -->
+      <div class="sidebar-footer">
+        <div class="sidebar-user-box">
+          <div class="sidebar-user-avatar" id="sidebar-user-avatar">
+            <i class="fa-solid fa-user"></i>
+          </div>
+          <div class="sidebar-user-info">
+            <span class="sidebar-user-name" id="sidebar-user-name">Responder</span>
+            <span class="sidebar-user-role-badge" id="sidebar-user-role">ADMIN</span>
+          </div>
+        </div>
+        <button class="sidebar-logout-btn" id="logout-btn" title="Sign out of AERIS">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT AREA -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" id="menu-toggle-btn" aria-label="Toggle Navigation">
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          <h2 class="topbar-heading" id="topbar-heading">
+            <i class="fa-solid fa-table-cells-large" id="topbar-icon" style="color: var(--color-primary); margin-right: 0.35rem;"></i>
+            Operations Dashboard
+          </h2>
+          <!-- Hidden clock placeholder for clock updater -->
+          <span id="topbar-clock-text" style="display: none;">00:00:00</span>
+        </div>
+
+        <div class="topbar-right">
+          <div class="emergency-alert-pill" id="topbar-emergency-pill" style="display: none;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span id="topbar-emergency-count">0 Active Emergencies</span>
+          </div>
+
+          <div class="user-profile-badge">
+            <div class="user-avatar" id="topbar-user-avatar">
+              <i class="fa-solid fa-user"></i>
+            </div>
+            <div class="user-details">
+              <span class="user-name" id="topbar-user-name">User</span>
+              <span class="user-role-tag" id="topbar-user-role">ADMIN</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Global Alert Banner -->
+      <div id="global-alert-banner" class="simple-error" style="display: none; margin: 1.5rem 1.5rem 0;"></div>
+
+      <!-- ===================================================================
+           TAB 1: OPERATIONS DASHBOARD
+           =================================================================== -->
+      <section class="content-tab active" id="tab-home">
+        <!-- Emergency Alert Banner (Visible when active emergencies exist) -->
+        <div class="active-emergency-banner" id="home-emergency-banner" style="display: none;">
+          <div class="emergency-pulse-indicator">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div class="emergency-banner-text">
+            <strong id="home-emergency-banner-title">Active Emergency Incident Alert</strong>
+            <span>Critical collision logged. Automated responder notifications dispatched.</span>
+          </div>
+          <button class="btn btn-emergency-quick" onclick="app.setActiveTab('alerts')">
+            View Alerts
+          </button>
+        </div>
+
+        <!-- Quick Actions Navigation Area -->
+        <div class="quick-actions-bar">
+          <button class="quick-action-btn" onclick="app.setActiveTab('alerts')">
+            <i class="fa-solid fa-bell" style="color: var(--color-emergency);"></i> Critical Alerts
+          </button>
+          <button class="quick-action-btn" onclick="app.setActiveTab('location')">
+            <i class="fa-solid fa-map-location-dot" style="color: var(--color-primary);"></i> Tactical Map
+          </button>
+          <button class="quick-action-btn" onclick="app.setActiveTab('incidents')">
+            <i class="fa-solid fa-clipboard-list" style="color: #64748B;"></i> Incident Registry
+          </button>
+          <button class="quick-action-btn" onclick="app.setActiveTab('detection')">
+            <i class="fa-solid fa-video" style="color: var(--color-primary);"></i> Video AI Detection
+          </button>
+        </div>
+
+        <!-- 5 Practical Metric Statistics Cards -->
+        <div class="stats-kpi-grid">
+          <div class="kpi-card">
+            <span class="kpi-label">Total Incidents</span>
+            <strong class="kpi-value" id="kpi-total-val">0</strong>
+            <span class="kpi-subtext">All logged collisions</span>
+          </div>
+
+          <div class="kpi-card kpi-card-danger" id="kpi-card-active">
+            <span class="kpi-label">Active Emergencies</span>
+            <strong class="kpi-value" id="kpi-active-val">0</strong>
+            <span class="kpi-subtext">Unresolved response units</span>
+          </div>
+
+          <div class="kpi-card">
+            <span class="kpi-label">Pending Hospital</span>
+            <strong class="kpi-value" id="kpi-hospital-val">0</strong>
+            <span class="kpi-subtext">Awaiting trauma pickup</span>
+          </div>
+
+          <div class="kpi-card">
+            <span class="kpi-label">Ambulance Dispatches</span>
+            <strong class="kpi-value" id="kpi-police-val">0</strong>
+            <span class="kpi-subtext">Active responders en route</span>
+          </div>
+
+          <div class="kpi-card kpi-card-success">
+            <span class="kpi-label">Resolved Incidents</span>
+            <strong class="kpi-value" id="kpi-resolved-val">0</strong>
+            <span class="kpi-subtext" id="kpi-resolved-rate">Cleared cases</span>
+          </div>
+        </div>
+
+        <!-- Recent Incidents Table Card -->
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h3>Recent Collision Incidents</h3>
+              <p class="section-desc">Real-time emergency feed, hospital assignment, and ambulance status.</p>
+            </div>
+
+            <!-- Clickable Filter Tabs -->
+            <div class="incident-filter-bar" id="home-filter-bar">
+              <button class="filter-tab-btn active" data-filter="all" id="hfilter-all">
+                All (<span id="hcount-all">0</span>)
+              </button>
+              <button class="filter-tab-btn" data-filter="pending" id="hfilter-pending">
+                Pending (<span id="hcount-pending">0</span>)
+              </button>
+              <button class="filter-tab-btn" data-filter="assigned" id="hfilter-assigned">
+                Assigned (<span id="hcount-assigned">0</span>)
+              </button>
+              <button class="filter-tab-btn" data-filter="dispatched" id="hfilter-dispatched">
+                Dispatched (<span id="hcount-dispatched">0</span>)
+              </button>
+              <button class="filter-tab-btn" data-filter="resolved" id="hfilter-resolved">
+                Resolved (<span id="hcount-resolved">0</span>)
+              </button>
+            </div>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Incident ID</th>
+                  <th>Recorded Time</th>
+                  <th>Location</th>
+                  <th>AI Confidence</th>
+                  <th>Hospital Response</th>
+                  <th>Police Status</th>
+                  <th>State</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="home-stream-list">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Clean Selected Incident Details Panel -->
+          <div id="home-incident-detail-panel" class="incident-detail-panel" style="display: none; margin-top: 1.25rem;">
+            <!-- Dynamically populated with details and 5-step progress timeline -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 2: ACCIDENT VIDEO DETECTION LABORATORY
+           =================================================================== -->
+      <section class="content-tab" id="tab-detection">
+        <div class="detection-grid">
+          <!-- Video Upload & Analysis Card -->
+          <div class="card">
+            <div class="card-header-flex">
+              <div>
+                <h3><i class="fa-solid fa-video" style="color: var(--color-primary);"></i> Video Accident Detection</h3>
+                <p class="section-desc">Select dashcam or CCTV footage for automated collision detection.</p>
+              </div>
+              <span class="badge badge-info">YOLOv8 AI MODEL</span>
+            </div>
+
+            <!-- Custom File Picker -->
+            <div class="custom-file-picker">
+              <label for="video-file-input" class="file-picker-btn">
+                <i class="fa-solid fa-file-arrow-up"></i> Choose Video
+              </label>
+              <span class="file-name" id="video-file-name">No video file selected</span>
+              <input type="file" id="video-file-input" accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm" />
+            </div>
+            <small style="color: var(--text-muted); font-size: 0.76rem; display: block; margin-bottom: 0.5rem;">
+              Supported formats: MP4, MOV, AVI, WEBM • Max 100 MB • Auto-analyzes on upload
+            </small>
+
+            <!-- Video Player Dropzone Container -->
+            <div class="video-container" id="video-dropzone">
+              <video id="detection-video" controls playsinline></video>
+
+              <!-- Scanning Overlay -->
+              <div class="video-ai-overlay scanning-mode" id="scanning-overlay" style="display: none;">
+                <div class="scanning-hud-box">
+                  <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 1.5rem; color: var(--color-primary);"></i>
+                  <div class="hud-title">YOLOv8 ANALYZING FOOTAGE</div>
+                  <p class="hud-subtitle" id="scanning-status-text">Processing frames & optical shock telemetry...</p>
+                </div>
+              </div>
+
+              <!-- Collision HUD Overlay -->
+              <div class="video-hud-overlay" id="hud-overlay" style="display: none;">
+                <div class="hud-top-bar">
+                  <div class="hud-alert-badge danger" id="hud-status-badge">
+                    <i class="fa-solid fa-triangle-exclamation"></i> ACCIDENT DETECTED
+                  </div>
+                  <div class="hud-stats-group" id="hud-stats-group" style="display: flex; gap: 0.35rem;">
+                    <span class="hud-stat-chip" id="hud-frame-chip">Frame #--</span>
+                    <span class="hud-stat-chip" id="hud-conf-chip">Conf: --%</span>
+                    <span class="hud-stat-chip" id="hud-shock-chip">Shock: --x</span>
+                  </div>
+                </div>
+
+                <div class="hud-bottom-controls">
+                  <button type="button" class="hud-action-btn" id="hud-replay-btn">
+                    <i class="fa-solid fa-rotate-left"></i> Replay Moment
+                  </button>
+                  <button type="button" class="hud-action-btn" id="hud-snapshot-btn">
+                    <i class="fa-solid fa-camera"></i> Frame Snapshot
+                  </button>
+                </div>
+              </div>
+
+              <!-- Snapshot View (Keyframe Image) -->
+              <div class="detection-snapshot-view" id="snapshot-container" style="display: none;">
+                <img id="snapshot-img" src="" alt="AI Detection Snapshot" class="snapshot-img" />
+                <div class="snapshot-footer-badge">
+                  <span id="snapshot-frame-tag">Collision Keyframe</span>
+                  <span id="snapshot-conf-tag">Confidence: 98%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Upload / Process Status Text -->
+            <p id="detection-message" class="section-desc" style="color: var(--color-primary); font-weight: 600; min-height: 20px; margin-top: 0.5rem;"></p>
+          </div>
+
+          <!-- Detection Results Breakdown Card -->
+          <div class="card" id="detection-results-panel">
+            <div class="card-header-flex">
+              <div>
+                <h3><i class="fa-solid fa-chart-simple" style="color: var(--color-primary);"></i> AI Detection Results</h3>
+                <p class="section-desc">Model confidence metrics and collision confirmation.</p>
+              </div>
+              <span class="system-pill" id="detection-state-tag">STANDBY</span>
+            </div>
+
+            <div id="detection-results-content">
+              <div class="empty-stream-state">
+                <div class="empty-radar-circle">
+                  <i class="fa-solid fa-play"></i>
+                </div>
+                <h4>Awaiting Video Footage</h4>
+                <p>Upload vehicle footage to trigger automated object tracking and impact detection.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Separate Technical Model Diagnostics Section -->
+        <div class="card" style="margin-top: 1.25rem;">
+          <div class="card-header-flex">
+            <div>
+              <h3><i class="fa-solid fa-microchip" style="color: #64748B;"></i> Model & System Diagnostics</h3>
+              <p class="section-desc">Backend detection service health, communication protocols, and pipeline specifications.</p>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+            <div class="diagnostic-meter-card">
+              <div class="detail-label">AI Vision Service</div>
+              <div class="detail-value" id="diag-ai-status" style="color: var(--color-success); font-weight: 700;">ONLINE (YOLOv8s)</div>
+            </div>
+            <div class="diagnostic-meter-card">
+              <div class="detail-label">WebSocket Telemetry</div>
+              <div class="detail-value" id="diag-ws-status" style="color: var(--color-primary); font-weight: 700;">CONNECTED</div>
+            </div>
+            <div class="diagnostic-meter-card">
+              <div class="detail-label">Tracker Algorithm</div>
+              <div class="detail-value">ByteTrack Multi-Object</div>
+            </div>
+            <div class="diagnostic-meter-card">
+              <div class="detail-label">Inference Resolution</div>
+              <div class="detail-value">640 × 640 px</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 3: INCIDENT EMERGENCY ALERTS
+           =================================================================== -->
+      <section class="content-tab" id="tab-alerts">
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h3><i class="fa-solid fa-bell" style="color: var(--color-emergency);"></i> Incident Emergency Alerts</h3>
+              <p class="section-desc">Audit feed of geofenced responder alerts, hospital acknowledgment, and dispatch progression.</p>
+            </div>
+            <div class="alerts-filter-bar">
+              <button class="filter-chip active" data-filter="all" id="alerts-filter-all">All (<span id="alerts-count-all">0</span>)</button>
+              <button class="filter-chip" data-filter="emergency" id="alerts-filter-emergency">Emergencies (<span id="alerts-count-emergency">0</span>)</button>
+              <button class="filter-chip" data-filter="resolved" id="alerts-filter-resolved">Resolved (<span id="alerts-count-resolved">0</span>)</button>
+            </div>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table alerts-data-table sticky-first-col">
+              <thead>
+                <tr>
+                  <th>Incident ID</th>
+                  <th>Detection Timestamp</th>
+                  <th>Location</th>
+                  <th>Confidence</th>
+                  <th>Assigned Hospital</th>
+                  <th>Hospital Response</th>
+                  <th>Ambulance ID</th>
+                  <th>Ambulance Status</th>
+                  <th>ETA</th>
+                  <th>Police Status</th>
+                  <th>Dispatch Time</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="alerts-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 4: MASTER INCIDENT REGISTRY
+           =================================================================== -->
+      <section class="content-tab" id="tab-incidents">
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h3><i class="fa-solid fa-clipboard-list" style="color: var(--color-primary);"></i> Master Incident Registry</h3>
+              <p class="section-desc">Permanent collision registry, verified coordinates, and responder status audit.</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <div class="search-input-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="incidents-search-input" placeholder="Search Incident ID / Location..." class="table-search-input" />
+              </div>
+              <span class="system-pill active" id="incidents-total-pill">0 TOTAL LOGS</span>
+            </div>
+          </div>
+
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Incident ID</th>
+                  <th>Recorded Time</th>
+                  <th>Coordinates (Lat, Lng)</th>
+                  <th>Confidence</th>
+                  <th>Status</th>
+                  <th>Hospital</th>
+                  <th>Police</th>
+                  <th>Geofence Broadcast</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="incidents-table-body">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 5: LIVE TACTICAL MAP
+           =================================================================== -->
+      <section class="content-tab" id="tab-location">
+        <div class="card">
+          <div class="card-header-flex">
+            <div>
+              <h3><i class="fa-solid fa-map-location-dot" style="color: var(--color-primary);"></i> Live Tactical Map</h3>
+              <p class="section-desc">Conventional geospatial mapping of verified accident incidents and regional responder coverage.</p>
+            </div>
+            <span class="system-pill active" id="map-pins-pill">0 GEOTAGGED PINS</span>
+          </div>
+
+          <!-- Leaflet Map Container -->
+          <div id="tactical-map" class="live-map"></div>
+
+          <!-- Map Incident Cards List -->
+          <div class="map-incident-list" id="map-incident-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 6: HOSPITAL EMERGENCY RESPONSE
+           =================================================================== -->
+      <section class="content-tab" id="tab-hospital">
+        <!-- Hospital Facility Profile Card -->
+        <div class="card" id="hospital-facility-card">
+          <div class="card-header-flex">
+            <div>
+              <h3><i class="fa-solid fa-hospital" style="color: var(--color-primary);"></i> Hospital Facility & Geofence Settings</h3>
+              <p class="section-desc">Configure trauma facility coordinates and contact hotline to receive automated notifications within 5 km.</p>
+            </div>
+          </div>
+          <form id="hospital-facility-form" class="simple-form">
+            <div class="form-row">
+              <div class="input-field">
+                <label>Facility Latitude</label>
+                <input type="number" step="any" min="-90" max="90" id="hosp-facility-lat" placeholder="13.0827" required />
+              </div>
+              <div class="input-field">
+                <label>Facility Longitude</label>
+                <input type="number" step="any" min="-180" max="180" id="hosp-facility-lng" placeholder="80.2707" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="input-field">
+                <label>Emergency Dispatch Phone (E.164 format)</label>
+                <input type="tel" id="hosp-facility-phone" placeholder="+919876543210" required />
+              </div>
+              <div class="input-field" style="justify-content: flex-end;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer; padding: 0.75rem 0;">
+                  <input type="checkbox" id="hosp-facility-consent" />
+                  Enable Automated SMS/Call Broadcasts
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="align-self: flex-start;">
+              Save Facility Profile
+            </button>
+            <p id="hosp-facility-msg" class="section-desc" style="color: var(--color-success); font-weight: 600;"></p>
+          </form>
+        </div>
+
+        <!-- Active Hospital Incidents List -->
+        <div id="hospital-incidents-container">
+          <!-- Dynamically populated with clean response cards -->
+        </div>
+      </section>
+
+      <!-- ===================================================================
+           TAB 7: POLICE TACTICAL DISPATCH
+           =================================================================== -->
+      <section class="content-tab" id="tab-police">
+        <!-- Police Precinct Profile Card -->
+        <div class="card" id="police-facility-card">
+          <div class="card-header-flex">
+            <div>
+              <h3><i class="fa-solid fa-shield-halved" style="color: var(--color-primary);"></i> Police Precinct Settings</h3>
+              <p class="section-desc">Configure precinct coordinates and contact phone to receive automated road collision alerts.</p>
+            </div>
+          </div>
+          <form id="police-facility-form" class="simple-form">
+            <div class="form-row">
+              <div class="input-field">
+                <label>Station Latitude</label>
+                <input type="number" step="any" min="-90" max="90" id="police-facility-lat" placeholder="13.0827" required />
+              </div>
+              <div class="input-field">
+                <label>Station Longitude</label>
+                <input type="number" step="any" min="-180" max="180" id="police-facility-lng" placeholder="80.2707" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="input-field">
+                <label>Precinct Hotline (E.164 format)</label>
+                <input type="tel" id="police-facility-phone" placeholder="+919876543210" required />
+              </div>
+              <div class="input-field" style="justify-content: flex-end;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer; padding: 0.75rem 0;">
+                  <input type="checkbox" id="police-facility-consent" />
+                  Enable Automated Traffic Tactical Alerts
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="align-self: flex-start;">
+              Save Precinct Profile
+            </button>
+            <p id="police-facility-msg" class="section-desc" style="color: var(--color-success); font-weight: 600;"></p>
+          </form>
+        </div>
+
+        <!-- Active Police Incidents List -->
+        <div id="police-incidents-container">
+          <!-- Dynamically populated with clean response cards -->
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- =========================================================================
+       3. DISPATCH AUDIT TIMELINE MODAL
+       ========================================================================= -->
+  <div class="modal-overlay" id="audit-modal" style="display: none;">
+    <div class="modal-card">
+      <div class="card-header-flex" style="margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem;">
+        <div>
+          <h3 id="audit-modal-title"><i class="fa-solid fa-clock-rotate-left" style="color: var(--color-primary);"></i> Dispatch Audit Timeline</h3>
+          <p class="section-desc" id="audit-modal-subtitle">Chronological record of responder actions and status transitions.</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="app.closeAuditModal()" aria-label="Close Modal">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div id="audit-modal-body" style="max-height: 480px; overflow-y: auto; margin-top: 0.5rem;">
+        <!-- Dynamically rendered timeline -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Stack -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <!-- Leaflet Map JS (Local) -->
+  <script src="/leaflet.js"></script>
+
+  <!-- Socket.io Client JS (Local) -->
+  <script src="/socket.io.js"></script>
+
+  <!-- AERIS Vanilla App Logic -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
