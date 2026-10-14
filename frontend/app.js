@@ -1,11 +1,6 @@
-/**
- * AERIS — Autonomous Emergency Response & Intelligence System
- * Complete Vanilla JavaScript Application Logic
- */
 
 (function () {
   'use strict';
-  // --- TOAST NOTIFICATION UTILITY ---
   function showToastNotification(message, type = 'info') {
     const container = document.getElementById('toast-container');
     if (!container) return;
@@ -57,15 +52,20 @@
     return date.toLocaleDateString();
   }
 
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
-  // --- 1. CONFIGURATION & URLS ---
-  // When running directly from backend on port 5000, use relative '/api'.
-  // When running from VS Code Live Server (port 5500), Vite (port 5173), or file://, target http://localhost:5000:
   const isFileProto = window.location.protocol === 'file:';
   const API_BASE = isFileProto ? 'http://127.0.0.1:5000/api' : '/api';
   const SOCKET_URL = isFileProto ? 'http://127.0.0.1:5000' : window.location.origin;
 
-  // --- 2. GLOBAL STATE ---
   const state = {
     user: null,
     activeRole: 'admin',
@@ -82,12 +82,15 @@
     detectionResult: null,
     detectionFile: null,
     detectionPreviewUrl: null,
-    activeDetectionView: 'video', // 'video' | 'snapshot'
+    activeDetectionView: 'video',
     mapInstance: null,
     mapMarkersLayer: null,
     socket: null,
     autoDispatchTimer: null,
     autoDispatchInterval: null,
+    recommendedHospitalsCache: {},
+    recommendedLoading: {},
+    miniMapInstances: {},
   };
 
   function clearAutoDispatchTimer() {
@@ -101,7 +104,6 @@
     }
   }
 
-  // --- 3. API SERVICE HELPERS ---
   async function apiFetch(endpoint, options = {}) {
     const token = sessionStorage.getItem('aerisToken');
     const headers = {
@@ -122,7 +124,7 @@
         headers,
       });
     } catch (networkErr) {
-      throw new Error(`Cannot reach Backend on port 5000. Please start the backend server ('npm run server') first!`);
+      throw new Error(`Cannot reach AERIS Backend on port 5000. Please ensure the backend is running via 'npm run dev' or 'npm run dev:full'.`);
     }
 
     let data;
@@ -209,7 +211,6 @@
     });
   }
 
-  // --- 4. TOPBAR CLOCK & NAVIGATION ---
   function initClock() {
     function update() {
       const now = new Date();
@@ -231,9 +232,10 @@
     home: { label: 'Dashboard', icon: 'fa-solid fa-gauge-high' },
     detection: { label: 'Accident Video Detection', icon: 'fa-solid fa-video' },
     alerts: { label: 'Emergency Alerts', icon: 'fa-solid fa-triangle-exclamation' },
-    incidents: { label: 'Incident Registry', icon: 'fa-solid fa-list-check' },
-    hospital: { label: 'Hospital Response', icon: 'fa-solid fa-truck-medical' },
-    police: { label: 'Police Dispatch', icon: 'fa-solid fa-user-shield' },
+    incidents: { label: 'Incident', icon: 'fa-solid fa-list-check' },
+    ambulance: { label: 'Ambulance ', icon: 'fa-solid fa-truck-medical' },
+    hospital: { label: 'Hospital', icon: 'fa-solid fa-hospital' },
+    police: { label: 'Police', icon: 'fa-solid fa-user-shield' },
     location: { label: 'Live Tactical Map', icon: 'fa-solid fa-map-location-dot' },
   };
 
@@ -246,52 +248,93 @@
       state.selectedIncident = incident;
     }
 
-    // Update Topbar
     const conf = tabConfig[tabKey] || tabConfig.home;
     const topIcon = document.getElementById('topbar-icon');
     const topHead = document.getElementById('topbar-heading');
     if (topIcon) topIcon.innerHTML = `<i class="${conf.icon}"></i>`;
     if (topHead) topHead.textContent = conf.label;
 
-    // Update Sidebar active state
     document.querySelectorAll('.sidebar .nav-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.getAttribute('data-tab') === tabKey);
     });
 
-    // Toggle Content Sections
     document.querySelectorAll('.content-tab').forEach((sec) => {
       sec.classList.toggle('active', sec.id === `tab-${tabKey}`);
     });
 
-    // Close Mobile Drawer if open
     const sidebar = document.getElementById('sidebar');
     if (sidebar && window.innerWidth <= 1024) {
       sidebar.classList.remove('open');
     }
 
-    // Trigger tab-specific renders
     if (tabKey === 'home') renderDashboard();
     if (tabKey === 'alerts') renderAlertsTable();
     if (tabKey === 'incidents') renderIncidentsTable();
     if (tabKey === 'location') renderMap();
+    if (tabKey === 'ambulance') renderAmbulanceView();
     if (tabKey === 'hospital') renderHospitalView();
     if (tabKey === 'police') renderPoliceView();
   }
 
-  // --- 5. AUTHENTICATION & SESSION ---
   function initAuth() {
     function selectRole(role) {
+      if (!['admin', 'ambulance', 'hospital', 'police'].includes(role)) role = 'admin';
       state.activeRole = role;
+
+      const roleSelect = document.getElementById('auth-role-select');
+      if (roleSelect && roleSelect.value !== role) {
+        roleSelect.value = role;
+      }
+
+      const roleIcon = document.getElementById('auth-role-icon');
+      const rolePill = document.getElementById('auth-role-pill');
+      if (roleIcon) {
+        const iconMap = {
+          admin: 'fa-solid fa-user-gear',
+          ambulance: 'fa-solid fa-truck-medical',
+          hospital: 'fa-solid fa-hospital',
+          police: 'fa-solid fa-shield-halved',
+        };
+        roleIcon.className = iconMap[role] || 'fa-solid fa-user-shield';
+        const colorMap = {
+          admin: '#64748B',
+          ambulance: '#DC2626',
+          hospital: '#278653',
+          police: '#3974CE',
+        };
+        roleIcon.style.color = colorMap[role] || 'var(--color-primary)';
+      }
+
+      if (rolePill) {
+        rolePill.textContent = role.toUpperCase();
+        const pillStyles = {
+          admin: { bg: 'rgba(100, 116, 139, 0.15)', color: '#475569' },
+          ambulance: { bg: 'rgba(220, 38, 38, 0.15)', color: '#DC2626' },
+          hospital: { bg: 'rgba(39, 134, 83, 0.15)', color: '#278653' },
+          police: { bg: 'rgba(57, 116, 206, 0.15)', color: '#3974CE' },
+        };
+        const st = pillStyles[role] || pillStyles.admin;
+        rolePill.style.background = st.bg;
+        rolePill.style.color = st.color;
+      }
+
       document.querySelectorAll('.simple-role-buttons .role-btn').forEach((b) => {
         b.className = 'role-btn';
       });
       const btn = document.getElementById(`role-btn-${role}`);
       if (btn) btn.classList.add(`active-${role}`);
+
       updateAuthFormDisplay();
     }
 
-    // Role selection buttons
-    ['admin', 'hospital', 'police'].forEach((role) => {
+    const roleSelect = document.getElementById('auth-role-select');
+    if (roleSelect) {
+      roleSelect.addEventListener('change', (e) => {
+        selectRole(e.target.value);
+      });
+    }
+
+    ['admin', 'ambulance', 'hospital', 'police'].forEach((role) => {
       const btn = document.getElementById(`role-btn-${role}`);
       if (btn) {
         btn.addEventListener('click', () => {
@@ -300,13 +343,14 @@
       }
     });
 
-    // Auto-detect role as email is typed
     const emailInput = document.getElementById('auth-email');
     if (emailInput) {
       const detectRoleFromEmail = (val) => {
         if (!val || state.isSignUp) return;
         const low = val.toLowerCase();
-        if (low.includes('police') && state.activeRole !== 'police') {
+        if (low.includes('ambulance') && state.activeRole !== 'ambulance') {
+          selectRole('ambulance');
+        } else if (low.includes('police') && state.activeRole !== 'police') {
           selectRole('police');
         } else if (low.includes('hospital') && state.activeRole !== 'hospital') {
           selectRole('hospital');
@@ -319,7 +363,6 @@
       emailInput.addEventListener('blur', (e) => detectRoleFromEmail(e.target.value));
     }
 
-    // Demo quick credentials chips
     document.querySelectorAll('.demo-chip-btn').forEach((chip) => {
       chip.addEventListener('click', () => {
         if (state.isSignUp) {
@@ -329,7 +372,11 @@
         const demo = chip.dataset.demo;
         const emailEl = document.getElementById('auth-email');
         const passEl = document.getElementById('auth-password');
-        if (demo === 'police') {
+        if (demo === 'ambulance') {
+          selectRole('ambulance');
+          if (emailEl) emailEl.value = 'ambulance@aeris.com';
+          if (passEl) passEl.value = 'ambulance123';
+        } else if (demo === 'police') {
           selectRole('police');
           if (emailEl) emailEl.value = 'perambalur@police.com';
           if (passEl) passEl.value = 'police123';
@@ -345,7 +392,6 @@
       });
     });
 
-    // Toggle Sign In / Sign Up
     const toggleBtn = document.getElementById('auth-toggle-btn');
     if (toggleBtn) {
       toggleBtn.addEventListener('click', () => {
@@ -354,7 +400,6 @@
       });
     }
 
-    // Form submission
     const form = document.getElementById('auth-form');
     if (form) {
       form.addEventListener('submit', async (e) => {
@@ -370,7 +415,9 @@
           const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value;
         const lowEmail = email.toLowerCase();
-        if (lowEmail.includes('police') && state.activeRole !== 'police') {
+        if (lowEmail.includes('ambulance') && state.activeRole !== 'ambulance') {
+          state.activeRole = 'ambulance';
+        } else if (lowEmail.includes('police') && state.activeRole !== 'police') {
           state.activeRole = 'police';
         } else if (lowEmail.includes('hospital') && state.activeRole !== 'hospital') {
           state.activeRole = 'hospital';
@@ -387,6 +434,11 @@
             const details = {};
             if (state.activeRole === 'admin') {
               details.adminCode = document.getElementById('auth-admin-code').value.trim();
+            } else if (state.activeRole === 'ambulance') {
+              details.ambulanceUnitId = document.getElementById('auth-amb-unit')?.value?.trim() || 'AMB-108';
+              details.driverName = document.getElementById('auth-amb-driver')?.value?.trim() || name;
+              details.contactPhone = document.getElementById('auth-amb-phone')?.value?.trim() || '+919840122108';
+              details.capability = document.getElementById('auth-amb-capability')?.value || 'ALS';
             } else if (state.activeRole === 'hospital') {
               details.hospitalName = document.getElementById('auth-hosp-name').value.trim();
               details.hospitalRegNo = document.getElementById('auth-hosp-reg').value.trim();
@@ -429,7 +481,6 @@
       });
     }
 
-    // Sign out button
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
       logoutBtn.addEventListener('click', handleLogout);
@@ -456,12 +507,11 @@
       submitBtn.textContent = state.isSignUp ? 'Create Agency Account' : 'Sign In to Console';
     }
 
-    // Toggle fields
     document.querySelectorAll('.auth-signup-only').forEach((el) => {
       el.style.display = state.isSignUp ? 'flex' : 'none';
     });
 
-    ['admin', 'hospital', 'police'].forEach((r) => {
+    ['admin', 'ambulance', 'hospital', 'police'].forEach((r) => {
       document.querySelectorAll(`.role-field-${r}`).forEach((el) => {
         el.style.display = state.isSignUp && state.activeRole === r ? 'block' : 'none';
       });
@@ -472,11 +522,9 @@
     state.user = user;
     state.activeRole = user.role;
 
-    // Show App Layout, Hide Auth View
     document.getElementById('auth-view').style.display = 'none';
     document.getElementById('app-layout').style.display = 'flex';
 
-    // Update User Badges
     const topName = document.getElementById('topbar-user-name');
     const topRole = document.getElementById('topbar-user-role');
     const sideName = document.getElementById('sidebar-user-name');
@@ -495,14 +543,21 @@
 
     if (topAvatar) {
       topAvatar.className = `user-avatar avatar-${user.role}`;
-      topAvatar.innerHTML = `<i class="${user.role === 'admin' ? 'fa-solid fa-user-gear' : user.role === 'hospital' ? 'fa-solid fa-hospital-user' : 'fa-solid fa-user-shield'}"></i>`;
+      let avatarIcon = 'fa-solid fa-user-gear';
+      if (user.role === 'ambulance') avatarIcon = 'fa-solid fa-truck-medical';
+      else if (user.role === 'hospital') avatarIcon = 'fa-solid fa-hospital-user';
+      else if (user.role === 'police') avatarIcon = 'fa-solid fa-user-shield';
+      topAvatar.innerHTML = `<i class="${avatarIcon}"></i>`;
     }
 
-    // Role-based navigation visibility
+    const isAmbulance = user.role === 'ambulance';
     const isHospital = user.role === 'hospital';
     const isPolice = user.role === 'police';
     const isAdmin = user.role === 'admin';
 
+    document.querySelectorAll('.nav-role-ambulance').forEach((el) => {
+      el.style.display = isAdmin || isAmbulance ? 'flex' : 'none';
+    });
     document.querySelectorAll('.nav-role-hospital').forEach((el) => {
       el.style.display = isAdmin || isHospital ? 'flex' : 'none';
     });
@@ -516,8 +571,18 @@
       el.style.display = isAdmin ? 'block' : 'none';
     });
 
-    // Populate Facility form values if applicable
-    if (isHospital) {
+    if (isAmbulance) {
+      const unitId = document.getElementById('amb-driver-my-id');
+      const driverName = document.getElementById('amb-driver-my-name');
+      const phone = document.getElementById('amb-driver-my-phone');
+      const cap = document.getElementById('amb-driver-capability');
+      if (unitId && user.details?.ambulanceUnitId) unitId.value = user.details.ambulanceUnitId;
+      if (driverName && (user.details?.driverName || user.name)) driverName.value = user.details.driverName || user.name;
+      if (phone && (user.details?.contactPhone || user.details?.emergencyPhone)) {
+        phone.value = user.details.contactPhone || user.details.emergencyPhone;
+      }
+      if (cap && user.details?.capability) cap.value = user.details.capability;
+    } else if (isHospital) {
       const lat = document.getElementById('hosp-facility-lat');
       const lng = document.getElementById('hosp-facility-lng');
       const phone = document.getElementById('hosp-facility-phone');
@@ -541,10 +606,17 @@
       if (consent) consent.checked = user.details?.alertConsent === true;
     }
 
-    // Initialize socket & fetch incidents
     connectWebSocket();
     loadIncidents();
-    setActiveTab('home');
+    if (isAmbulance) {
+      setActiveTab('ambulance');
+    } else if (isHospital) {
+      setActiveTab('hospital');
+    } else if (isPolice) {
+      setActiveTab('police');
+    } else {
+      setActiveTab('home');
+    }
   }
 
   function handleLogout() {
@@ -559,7 +631,6 @@
     document.getElementById('auth-view').style.display = 'flex';
   }
 
-  // --- 6. REAL-TIME WEBSOCKET ---
   
   async function checkAiServiceHealth() {
     const diagAi = document.getElementById('diag-ai-status');
@@ -578,7 +649,6 @@
         return;
       }
     } catch {
-      // AI service might be offline or non-responsive
     }
     if (diagAi) {
       diagAi.textContent = 'STANDBY (:8000)';
@@ -603,6 +673,10 @@
       });
 
       state.socket.on('incident:updated', (inc) => {
+        const incId = inc.accidentId || inc.id || inc._id;
+        if (incId && state.recommendedHospitalsCache[incId]) {
+          delete state.recommendedHospitalsCache[incId];
+        }
         upsertIncident(inc);
         renderAllViews();
       });
@@ -612,11 +686,18 @@
       });
 
       state.socket.on('dispatch:assigned', (data) => {
+        if (data?.incidentId && state.recommendedHospitalsCache[data.incidentId]) {
+          delete state.recommendedHospitalsCache[data.incidentId];
+        }
         showToastNotification(`Hospital Assigned: #${data.incidentId} -> ${data.hospitalName}`);
       });
 
       state.socket.on('dispatch:ambulance_status', (data) => {
         showToastNotification(`Ambulance Update: #${data.incidentId} (${data.ambulanceId}) is ${data.status}`);
+      });
+
+      state.socket.on('dispatch:driver_triage', (data) => {
+        showToastNotification(`Driver Triage Alert #${data.incidentId}: ${data.injuredCount} Injured (${data.injurySeverity}), ${data.ambulanceTypeRequired} needed!`);
       });
 
       state.socket.on('dispatch:escalation', (data) => {
@@ -661,7 +742,6 @@
     }
   }
 
-  // --- 7. INCIDENT FETCHING & DATA ---
   async function loadIncidents() {
     try {
       const records = await apiFetch('/incidents');
@@ -682,11 +762,11 @@
     renderAlertsTable();
     renderIncidentsTable();
     if (state.activeTab === 'location') renderMap();
+    if (state.activeTab === 'ambulance') renderAmbulanceView();
     if (state.activeTab === 'hospital') renderHospitalView();
     if (state.activeTab === 'police') renderPoliceView();
   }
 
-  // --- 8. BADGES & KPIS ---
   function updateBadgesAndKPIs() {
     const incidents = state.incidents;
     const activeEmergencies = incidents.filter((i) => (i.status ?? 'Emergency') !== 'Resolved');
@@ -703,7 +783,6 @@
 
     const resolutionRate = incidents.length ? Math.round((resolvedCount / incidents.length) * 100) : 100;
 
-    // Update KPI numbers
     const kpiTot = document.getElementById('kpi-total-val');
     const kpiAct = document.getElementById('kpi-active-val');
     const kpiRes = document.getElementById('kpi-resolved-val');
@@ -718,17 +797,16 @@
     if (kpiPol) kpiPol.textContent = policeAlerts;
     if (kpiRate) kpiRate.textContent = `${resolutionRate}% overall resolution rate`;
 
-    // Active KPI card pulse class
     const kpiActCard = document.getElementById('kpi-card-active');
     if (kpiActCard) {
       kpiActCard.classList.toggle('has-active', activeEmergencies.length > 0);
     }
 
-    // Topbar & Sidebar Emergency Pills
     const topEmergencyPill = document.getElementById('topbar-emergency-pill');
     const topEmergencyCount = document.getElementById('topbar-emergency-count');
     const sideAlertBadge = document.getElementById('sidebar-alerts-badge');
     const sideIncBadge = document.getElementById('sidebar-incidents-badge');
+    const sideAmbBadge = document.getElementById('sidebar-ambulance-badge');
 
     if (topEmergencyPill) {
       topEmergencyPill.style.display = activeEmergencies.length > 0 ? 'flex' : 'none';
@@ -739,9 +817,12 @@
       sideAlertBadge.style.display = activeEmergencies.length > 0 ? 'inline-block' : 'none';
       sideAlertBadge.textContent = activeEmergencies.length;
     }
+    if (sideAmbBadge) {
+      sideAmbBadge.style.display = activeEmergencies.length > 0 ? 'inline-block' : 'none';
+      sideAmbBadge.textContent = activeEmergencies.length;
+    }
     if (sideIncBadge) sideIncBadge.textContent = incidents.length;
 
-    // Home Banner Critical Alert
     const homeEmergencyBanner = document.getElementById('home-emergency-banner');
     const homeEmergencyTitle = document.getElementById('home-emergency-banner-title');
     if (homeEmergencyBanner) {
@@ -752,13 +833,11 @@
     }
   }
 
-  // --- 9. RENDER DASHBOARD (INCIDENT TABLE + FILTER TABS + DETAILS PANEL) ---
   function renderDashboard() {
     const tbody = document.getElementById('home-stream-list');
     const detailPanel = document.getElementById('home-incident-detail-panel');
     if (!tbody) return;
 
-    // Calculate counts for filter tabs
     const allCount = state.incidents.length;
     const pendingCount = state.incidents.filter((i) =>
       (i.status ?? 'Emergency') !== 'Resolved' &&
@@ -780,7 +859,6 @@
 
     const resolvedCount = state.incidents.filter((i) => i.status === 'Resolved').length;
 
-    // Update filter count badges
     const cAll = document.getElementById('hcount-all');
     const cPen = document.getElementById('hcount-pending');
     const cAss = document.getElementById('hcount-assigned');
@@ -793,13 +871,11 @@
     if (cDis) cDis.textContent = dispatchedCount;
     if (cRes) cRes.textContent = resolvedCount;
 
-    // Update filter tab active buttons
     ['all', 'pending', 'assigned', 'dispatched', 'resolved'].forEach((filter) => {
       const btn = document.getElementById(`hfilter-${filter}`);
       if (btn) btn.classList.toggle('active', state.homeFilter === filter);
     });
 
-    // Filter incidents
     const filtered = state.incidents.filter((inc) => {
       const isResolved = inc.status === 'Resolved';
       const isAssigned = Boolean(inc.dispatch?.assignedHospitalId);
@@ -869,7 +945,6 @@
       }).join('');
     }
 
-    // Render Clean Selected Incident Detail Panel
     if (detailPanel) {
       const selected = state.incidents.find((i) => (i.accidentId || i.id || i._id) === state.selectedIncidentId);
       if (!selected) {
@@ -976,6 +1051,20 @@
             </div>
           </div>
 
+          ${selected.driverReport?.reportedAt ? `
+            <div style="margin: 0.9rem 0; padding: 0.75rem 1rem; background: rgba(220, 38, 38, 0.08); border: 1px solid rgba(220, 38, 38, 0.25); border-radius: var(--radius-sm);">
+              <div style="font-size: 0.8rem; font-weight: 700; color: #DC2626; display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.35rem;">
+                <i class="fa-solid fa-kit-medical"></i> AMBULANCE DRIVER ON-SCENE FIELD TRIAGE REPORT
+              </div>
+              <div style="display: flex; gap: 1.25rem; flex-wrap: wrap; font-size: 0.84rem; color: var(--text-primary);">
+                <span><strong>Injured Victims:</strong> ${selected.driverReport.injuredCount} (${selected.driverReport.injurySeverity || 'CRITICAL'})</span>
+                <span><strong>Ambulance Capability:</strong> ${selected.driverReport.ambulanceTypeRequired || 'ALS'} ${selected.driverReport.extraAmbulancesNeeded > 0 ? `(+${selected.driverReport.extraAmbulancesNeeded} Backup Units Needed)` : ''}</span>
+                ${selected.driverReport.triageNotes ? `<span><strong>Field Notes:</strong> ${selected.driverReport.triageNotes}</span>` : ''}
+                <span><strong>EMT Lead / Driver:</strong> ${selected.driverReport.driverName || 'EMT Lead'}</span>
+              </div>
+            </div>
+          ` : ''}
+
           <!-- Actions Row -->
           <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
             <button class="btn btn-sm btn-primary" onclick="app.inspectIncident('${id}')">
@@ -993,7 +1082,6 @@
     }
   }
 
-  // --- 10. RENDER ALERTS TABLE ---
   function renderAlertsTable() {
     const tbody = document.getElementById('alerts-table-body');
     if (!tbody) return;
@@ -1004,7 +1092,6 @@
       return true;
     });
 
-    // Update filter counts
     const cAll = document.getElementById('alerts-count-all');
     const cEmg = document.getElementById('alerts-count-emergency');
     const cRes = document.getElementById('alerts-count-resolved');
@@ -1031,6 +1118,8 @@
       const policeStatus = inc.policeResponse?.status || pol;
       const dispatchTime = dispatch.dispatchedAt ? new Date(dispatch.dispatchedAt).toLocaleTimeString() : 'Not Dispatched';
 
+      const videoUrl = getIncidentVideoUrl(inc);
+
       return `
         <tr>
           <td><strong>${id}</strong>${inc.isDemo ? '<span class="demo-pill">DEMO</span>' : ''}</td>
@@ -1051,7 +1140,7 @@
               <button class="btn btn-panel-action" onclick="app.inspectIncident('${id}')" title="View Live Tactical Map">
                 <i class="fa-solid fa-map-pin"></i> Map
               </button>
-              ${inc.videoUrl ? `
+              ${videoUrl ? `
                 <button class="btn btn-secondary" onclick="app.openVideoModal('${id}')" title="Watch Collision Footage" style="padding: 0.4rem 0.65rem;">
                   <i class="fa-solid fa-video text-cyan"></i>
                 </button>
@@ -1065,7 +1154,6 @@
     }).join('');
   }
 
-  // --- 11. RENDER MASTER INCIDENTS TABLE ---
   function renderIncidentsTable() {
     const tbody = document.getElementById('incidents-table-body');
     const totalPill = document.getElementById('incidents-total-pill');
@@ -1089,6 +1177,7 @@
       const isResolved = inc.status === 'Resolved';
       const hosp = inc.hospitalAlertStatus || inc.hospStatus || 'Pending';
       const pol = inc.policeAlertStatus || inc.policeStatus || 'Pending';
+      const videoUrl = getIncidentVideoUrl(inc);
 
       return `
         <tr>
@@ -1104,21 +1193,23 @@
           <td title="${inc.externalAlerts?.message || ''}"><span class="area-alert-pill">${inc.externalAlerts?.status || (inc.isDemo ? 'Demo' : 'Auto Dispatch')}</span></td>
           <td>
             <div style="display: flex; gap: 0.35rem; align-items: center;">
-              <button class="btn btn-panel-action" onclick="app.inspectIncident('${id}')">
+              <button class="btn btn-panel-action" onclick="app.inspectIncident('${id}')" title="View Live Tactical Map">
                 <i class="fa-solid fa-map-location-dot"></i> Map
               </button>
-              ${inc.videoUrl ? `
+              ${videoUrl ? `
                 <button class="btn btn-secondary" onclick="app.openVideoModal('${id}')" title="Watch Collision Footage" style="padding: 0.4rem 0.65rem;">
                   <i class="fa-solid fa-video text-cyan"></i>
                 </button>
               ` : ''}
+              <button class="btn btn-secondary" onclick="app.openAuditModal('${id}')" title="Dispatch Audit Timeline" style="padding: 0.4rem 0.65rem;">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+              </button>
             </div>
           </td>
         </tr>`;
     }).join('');
   }
 
-  // --- 12. LEAFLET TACTICAL MAP ---
   function renderMap() {
     const mapEl = document.getElementById('tactical-map');
     if (!mapEl || typeof L === 'undefined') return;
@@ -1193,7 +1284,6 @@
         </div>`);
     });
 
-    // Center on selected or fit bounds
     if (state.selectedIncident && Number.isFinite(state.selectedIncident.latitude)) {
       state.mapInstance.setView([state.selectedIncident.latitude, state.selectedIncident.longitude], 14);
     } else if (validPoints.length > 1) {
@@ -1202,7 +1292,6 @@
       state.mapInstance.setView([validPoints[0].latitude, validPoints[0].longitude], 13);
     }
 
-    // Render list below map
     const listEl = document.getElementById('map-incident-list');
     if (listEl) {
       listEl.innerHTML = validPoints.map((inc) => {
@@ -1230,10 +1319,9 @@
     }
   }
 
-  // Helper: Resolve authenticated video streaming URL
   function getIncidentVideoUrl(inc) {
     if (!inc) return null;
-    const rawUrl = inc.videoUrl;
+    const rawUrl = inc.videoUrl || inc.video_url || inc.videoPath || (inc.videoFileName ? `/api/incidents/${inc.accidentId || inc.id || inc._id}/video` : '');
     if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
     const token = sessionStorage.getItem('aerisToken') || '';
     let url = rawUrl.trim();
@@ -1245,7 +1333,6 @@
     return url;
   }
 
-  // --- 13. HOSPITAL & POLICE RESPONDERS ---
   function renderHospitalView() {
     const container = document.getElementById('hospital-incidents-container');
     if (!container) return;
@@ -1281,11 +1368,11 @@
       const assignedId = dispatch.assignedHospitalId ? String(dispatch.assignedHospitalId) : '';
       const assignedName = (dispatch.assignedHospitalName || '').trim().toLowerCase();
       const isAssignedToMe = Boolean(
-        isAdmin ||
-        (assignedId && (
+        assignedId && (
           (currentUserId && assignedId === String(currentUserId)) ||
-          (currentUserName && assignedName && assignedName === currentUserName)
-        ))
+          (currentUserName && assignedName && assignedName === currentUserName) ||
+          isAdmin
+        )
       );
       const isAssignedToOther = Boolean(assignedId && !isAssignedToMe);
       const isUnassigned = !assignedId;
@@ -1294,30 +1381,55 @@
       const ambId = dispatch.ambulanceId || '';
       const eta = dispatch.etaMinutes != null ? `${dispatch.etaMinutes} min` : 'Unknown';
 
-      // Find candidate details for this hospital
+      const driverName = dispatch.driverName || (inc.driverReport?.driverName) || '';
+      const driverPhone = dispatch.driverPhone || (inc.driverReport?.driverPhone) || '';
+      const driverCapability = dispatch.driverCapability || (inc.driverReport?.ambulanceTypeRequired) || 'ALS';
+      const isDriverAccepted = Boolean(ambStatus === 'EN_ROUTE' || ambStatus === 'ARRIVED' || ambStatus === 'TRANSPORT' || ambStatus === 'RESOLVED' || driverName);
+      const effectiveAmbUnit = dispatch.ambulanceId || ambId || (isDriverAccepted ? 'AMB-108' : 'Awaiting Assignment');
+      const effDriverName = driverName || (isDriverAccepted ? 'Karthik (108 Paramedic Lead)' : 'Awaiting Driver Acceptance');
+
       const myCandidate = (dispatch.candidates || []).find((c) =>
-        (currentUserId && String(c.hospitalId) === String(currentUserId)) ||
+        (currentUserId && c.hospitalId && String(c.hospitalId) === String(currentUserId)) ||
         (currentUserName && (c.hospitalName || '').trim().toLowerCase() === currentUserName)
       );
+      const isDeclinedByMe = Boolean(
+        !isAssignedToMe &&
+        myCandidate &&
+        (myCandidate.status === 'REJECTED' || myCandidate.status === 'UNAVAILABLE')
+      );
+      const isAmbulanceUnavailableByMe = Boolean(isDeclinedByMe && myCandidate.status === 'UNAVAILABLE');
+      const declineReason = myCandidate?.rejectionReason || '';
+      const isPendingAlert = isUnassigned && !isDeclinedByMe;
+
       const distInfo = myCandidate
         ? `${myCandidate.distanceKm} km away (~${myCandidate.travelTimeMinutes} min travel)`
         : 'Distance calculating...';
       const videoUrl = getIncidentVideoUrl(inc);
 
       return `
-        <article class="card response-card" style="border-left-color: ${isAssignedToMe ? 'var(--color-primary)' : isAssignedToOther ? 'var(--text-secondary)' : 'var(--color-emergency)'};">
+        <article class="card response-card" style="border-left-color: ${isAssignedToMe ? 'var(--color-primary)' : isDeclinedByMe ? '#ef4444' : isAssignedToOther ? 'var(--text-secondary)' : 'var(--color-emergency)'};">
           <div class="card-header-flex">
             <div>
-              <h3 style="color: var(--text-primary);">
+              <h3 style="color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                 <i class="fa-solid fa-triangle-exclamation text-red"></i> Emergency Incident #${id}
                 ${inc.isDemo ? '<span class="demo-pill">DEMO SIMULATION</span>' : ''}
               </h3>
               <span class="section-desc">Recorded at ${inc.timestamp ? new Date(inc.timestamp).toLocaleString() : 'Time unavailable'}</span>
             </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
               ${isAssignedToMe ? `<span class="responder-status-pill active"><i class="fa-solid fa-hospital"></i> PRIMARY ASSIGNED TO YOU</span>` : ''}
+              ${isAssignedToMe && isDriverAccepted ? `
+                <span class="responder-status-pill active" style="background: rgba(16, 185, 129, 0.12); color: #16A34A; border-color: rgba(16, 185, 129, 0.4); font-weight: 700;">
+                  <i class="fa-solid fa-truck-medical text-green"></i> AMBULANCE: ${effectiveAmbUnit} | DRIVER: ${effDriverName} (ACCEPTED)
+                </span>
+              ` : ''}
               ${isAssignedToOther ? `<span class="responder-status-pill"><i class="fa-solid fa-lock"></i> Assigned to ${dispatch.assignedHospitalName}</span>` : ''}
-              ${isUnassigned ? `<span class="responder-status-pill" style="border-color: #ef4444; color: #f87171;"><i class="fa-solid fa-bell"></i> ACTION REQUIRED: ALERTED</span>` : ''}
+              ${isDeclinedByMe ? `
+                <span class="responder-status-pill" style="border-color: #ef4444; color: #f87171; background: rgba(239, 68, 68, 0.1); font-weight: 700;">
+                  <i class="fa-solid ${isAmbulanceUnavailableByMe ? 'fa-truck-field' : 'fa-ban'}"></i> ${isAmbulanceUnavailableByMe ? 'AMBULANCE UNAVAILABLE' : 'DECLINED / DIVERTED'}
+                </span>
+              ` : ''}
+              ${isPendingAlert ? `<span class="responder-status-pill" style="border-color: #ef4444; color: #f87171;"><i class="fa-solid fa-bell"></i> ACTION REQUIRED: ALERTED</span>` : ''}
             </div>
           </div>
 
@@ -1375,19 +1487,54 @@
               <div class="dispatch-telemetry-grid">
                 <div class="dispatch-metric-card">
                   <label>Assigned Unit</label>
-                  <strong>${ambId || 'Unassigned'}</strong>
+                  <strong style="color: var(--text-primary);">
+                    <i class="fa-solid fa-truck-medical text-blue"></i> ${effectiveAmbUnit}
+                  </strong>
+                  ${isDriverAccepted ? `
+                    <small style="color: #10B981; font-weight: 700; display: block; margin-top: 0.2rem;">
+                      <i class="fa-solid fa-circle-check"></i> Accepted by Driver
+                    </small>
+                  ` : `
+                    <small style="color: var(--text-secondary); display: block; margin-top: 0.2rem;">
+                      Pending Driver
+                    </small>
+                  `}
                 </div>
+
+                <div class="dispatch-metric-card">
+                  <label>Driver / Lead EMT</label>
+                  <strong style="color: var(--text-primary);">
+                    <i class="fa-solid fa-user-nurse text-green"></i> ${effDriverName}
+                  </strong>
+                  ${driverPhone ? `
+                    <div style="margin-top: 0.25rem;">
+                      <a href="tel:${driverPhone}" class="btn btn-sm" style="padding: 0.15rem 0.45rem; font-size: 0.74rem; background: #16A34A; color: #fff; text-decoration: none; border-radius: 4px; display: inline-flex; align-items: center; gap: 0.3rem;">
+                        <i class="fa-solid fa-phone"></i> Call (${driverPhone})
+                      </a>
+                    </div>
+                  ` : `
+                    <small style="color: var(--text-secondary); display: block; margin-top: 0.2rem;">
+                      ${isDriverAccepted ? 'Emergency Desk Linked' : 'Awaiting Link'}
+                    </small>
+                  `}
+                </div>
+
                 <div class="dispatch-metric-card">
                   <label>Vehicle Status</label>
-                  <strong style="color: ${ambStatus === 'ARRIVED' ? '#10b981' : '#38bdf8'};">${ambStatus}</strong>
+                  <strong style="color: ${ambStatus === 'ARRIVED' ? '#10b981' : ambStatus === 'EN_ROUTE' ? '#2563EB' : ambStatus === 'RESOLVED' ? '#10b981' : '#D97706'};">
+                    ${ambStatus === 'EN_ROUTE' ? 'EN ROUTE TO SCENE' : ambStatus}
+                  </strong>
+                  <small style="color: var(--text-secondary); display: block; margin-top: 0.2rem;">
+                    Capability: ${driverCapability}
+                  </small>
                 </div>
+
                 <div class="dispatch-metric-card">
                   <label>Calculated Travel ETA</label>
-                  <strong>~${eta}</strong>
-                </div>
-                <div class="dispatch-metric-card">
-                  <label>Telemetry Mode</label>
-                  <small style="color: #94a3b8; font-size: 0.75rem; display: block;">Speed model 40km/h (No fake GPS stream)</small>
+                  <strong style="color: var(--text-primary);"><i class="fa-solid fa-clock text-cyan"></i> ~${eta}</strong>
+                  <small style="color: #94a3b8; font-size: 0.75rem; display: block; margin-top: 0.2rem;">
+                    Speed model 40km/h
+                  </small>
                 </div>
               </div>
 
@@ -1431,15 +1578,38 @@
             </div>
           ` : ''}
 
-          ${isUnassigned ? `
+          ${isDeclinedByMe ? `
+            <div class="hospital-declined-banner">
+              <div>
+                <strong style="color: #ef4444; display: flex; align-items: center; gap: 0.4rem; font-size: 0.88rem;">
+                  <i class="fa-solid ${isAmbulanceUnavailableByMe ? 'fa-truck-field' : 'fa-ban'}"></i>
+                  ${isAmbulanceUnavailableByMe ? 'You reported ambulance units unavailable for this collision' : 'You declined / diverted primary response for this incident'}
+                </strong>
+                <p style="margin: 0.25rem 0 0; font-size: 0.8rem; color: var(--text-secondary);">
+                  Reason: <em>"${escapeHtml(declineReason || 'Operational constraints')}"</em> &bull; Auto-escalated to regional backup facilities.
+                </p>
+              </div>
+              <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                <button class="btn btn-glow-primary btn-sm" onclick="app.acceptHospitalAssignment('${id}')" title="Reconsider and accept primary care">
+                  <i class="fa-solid fa-rotate-left"></i> Reconsider &amp; Accept Assignment
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="app.openAuditModal('${id}')">
+                  <i class="fa-solid fa-clock-rotate-left"></i> Audit History
+                </button>
+                ${Number.isFinite(inc.latitude) ? `<a class="btn btn-secondary btn-sm" href="https://www.google.com/maps?q=${inc.latitude},${inc.longitude}" target="_blank" rel="noreferrer"><i class="fa-solid fa-map-location-dot"></i> External Map</a>` : ''}
+              </div>
+            </div>
+          ` : ''}
+
+          ${isPendingAlert ? `
             <div class="response-actions">
               <button class="btn btn-glow-primary" onclick="app.acceptHospitalAssignment('${id}')">
                 <i class="fa-solid fa-check-double"></i> Accept Primary Hospital Assignment
               </button>
-              <button class="btn btn-secondary" onclick="app.rejectHospitalAssignmentPrompt('${id}')">
+              <button class="btn btn-secondary" onclick="app.openDeclineModal('${id}', 'decline')">
                 <i class="fa-solid fa-ban text-red"></i> Decline / Divert
               </button>
-              <button class="btn btn-secondary" onclick="app.reportAmbulanceUnavailablePrompt('${id}')">
+              <button class="btn btn-secondary" onclick="app.openDeclineModal('${id}', 'unavailable')">
                 <i class="fa-solid fa-truck text-amber"></i> Ambulance Unavailable
               </button>
               <button class="btn btn-secondary" onclick="app.openAuditModal('${id}')">
@@ -1546,6 +1716,627 @@
     }).join('');
   }
 
+  function renderAmbulanceView() {
+    const container = document.getElementById('ambulance-missions-container');
+    if (!container) return;
+
+    const visible = state.incidents.filter((i) => i.status !== 'Resolved');
+    if (!visible.length) {
+      container.innerHTML = `
+        <div class="card empty-stream-state">
+          <div class="empty-radar-circle" style="border-color: rgba(16, 185, 129, 0.4); color: #10b981;">
+            <i class="fa-solid fa-circle-check"></i>
+          </div>
+          <h4>No Active Emergency Dispatches</h4>
+          <p>All road collisions are cleared. Ambulance unit is currently on standby and ready for next dispatch.</p>
+        </div>`;
+      return;
+    }
+
+    const myAmbIdInput = document.getElementById('amb-driver-my-id');
+    const myDriverId = myAmbIdInput ? myAmbIdInput.value.trim() : 'AMB-108';
+
+    container.innerHTML = visible.map((inc) => {
+      const id = inc.accidentId || inc.id || inc._id;
+      const dispatch = inc.dispatch || {};
+      const ambStatus = dispatch.ambulanceStatus || 'NONE';
+      const eta = dispatch.etaMinutes != null ? `${dispatch.etaMinutes} min` : 'Calculating...';
+      const videoUrl = getIncidentVideoUrl(inc);
+
+      const lat = inc.latitude ? inc.latitude.toFixed(5) : '0';
+      const lng = inc.longitude ? inc.longitude.toFixed(5) : '0';
+      const gmapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+
+      const report = inc.driverReport || {};
+      const hasReport = Boolean(report.reportedAt && report.injuredCount);
+
+      const isPhase1 = ambStatus === 'NONE' || ambStatus === 'IDLE' || ambStatus === 'DISPATCHED';
+      const isPhase2 = ambStatus === 'EN_ROUTE';
+      const isPhase3 = ambStatus === 'ARRIVED';
+      const isPhase4 = ambStatus === 'TRANSPORT';
+      const isResolved = ambStatus === 'RESOLVED';
+
+      const phaseBorderColor = isResolved ? '#10B981' : isPhase4 ? '#2563EB' : isPhase3 ? '#10B981' : isPhase2 ? '#D97706' : '#2563EB';
+
+      return `
+        <article class="card response-card" style="border-left: 4px solid ${phaseBorderColor}; margin-bottom: 1.5rem;">
+          <div class="card-header-flex">
+            <div>
+              <h3 style="color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <i class="fa-solid fa-triangle-exclamation text-red"></i> Emergency Mission #${id}
+                <span class="responder-status-pill active" style="font-weight: 700;">
+                  <i class="fa-solid fa-truck-medical"></i> ${
+                    isPhase1 ? 'PHASE 1: READY TO DISPATCH' :
+                    isPhase2 ? 'PHASE 2: EN ROUTE TO SCENE' :
+                    isPhase3 ? 'PHASE 3: ON SCENE (TRIAGE)' :
+                    isPhase4 ? 'PHASE 4: TRANSPORTING TO HOSPITAL' :
+                    'MISSION COMPLETED'
+                  }
+                </span>
+                ${inc.severity ? `<span class="demo-pill" style="background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.3); font-weight: 700;">SEVERITY: ${inc.severity}</span>` : ''}
+              </h3>
+              <span class="section-desc">Reported at ${inc.timestamp ? new Date(inc.timestamp).toLocaleString() : 'Time unavailable'}</span>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="background: #1e293b; color: #38bdf8; border-color: #334155;" title="Open turn-by-turn GPS route in Google Maps">
+                <i class="fa-solid fa-diamond-turn-right text-cyan"></i> Open GPS Navigation
+              </a>
+              <button class="btn btn-secondary btn-sm" onclick="app.openAuditModal('${id}')">
+                <i class="fa-solid fa-clock-rotate-left"></i> Timeline
+              </button>
+            </div>
+          </div>
+
+          <!-- Mission Telemetry Chips -->
+          <div class="stream-telemetry-row" style="margin: 0.85rem 0;">
+            <span class="telemetry-coord"><i class="fa-solid fa-location-crosshairs"></i> ${lat}°, ${lng}°</span>
+            <span class="telemetry-conf"><i class="fa-solid fa-shield-virus"></i> ${Math.round((inc.confidence || 0) * 100)}% AI Conf</span>
+            <span class="hud-stat-chip"><i class="fa-solid fa-hospital"></i> Base: ${dispatch.assignedHospitalName || 'City General Hospital'}</span>
+            <span class="hud-stat-chip" style="color: #38bdf8;"><i class="fa-solid fa-clock"></i> Travel ETA: ~${eta}</span>
+          </div>
+
+          <!-- 4-PHASE PROGRESS STEPPER INDICATOR -->
+          <div class="dispatch-step-flow" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0 1rem 0;">
+            <span class="step-chip ${isPhase1 ? 'active' : 'completed'}">
+              1. DISPATCH
+            </span>
+            <span class="step-chip ${isPhase2 ? 'active' : (isPhase3 || isPhase4 || isResolved) ? 'completed' : ''}">
+              2. EN ROUTE
+            </span>
+            <span class="step-chip ${isPhase3 ? 'active' : (isPhase4 || isResolved) ? 'completed' : ''}">
+              3. ON SCENE
+            </span>
+            <span class="step-chip ${isPhase4 ? 'active' : isResolved ? 'completed' : ''}">
+              4. TRANSPORT
+            </span>
+            ${isResolved ? '<span class="step-chip completed"><i class="fa-solid fa-check"></i> RESOLVED</span>' : ''}
+          </div>
+
+          ${isPhase1 ? `
+            <div class="departure-action-banner" style="border-left: 4px solid #2563EB; margin-bottom: 0.85rem;">
+              <div class="departure-banner-info">
+                <strong style="color: #2563EB; font-size: 0.95rem;">
+                  <i class="fa-solid fa-bell fa-shake"></i> Phase 1: New Emergency Alert — Immediate Dispatch Required
+                </strong>
+                <span>Collision detected at <strong>${inc.location || `${lat}°, ${lng}°`}</strong> (~${eta} transit). Tap accept to begin emergency departure.</span>
+              </div>
+            </div>
+
+            ${videoUrl ? `
+              <div class="responder-footage-box" style="margin: 0.85rem 0; background: rgba(15, 23, 42, 0.55); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                  <span style="font-size: 0.82rem; font-weight: 700; color: var(--color-cyan); display: flex; align-items: center; gap: 0.45rem;">
+                    <i class="fa-solid fa-video"></i> Pre-Crash CCTV Clip (Accident Impact Inspection)
+                  </span>
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="app.openVideoModal('${id}')">
+                    <i class="fa-solid fa-expand"></i> Fullscreen
+                  </button>
+                </div>
+                <div style="background: #000; border-radius: 6px; overflow: hidden; max-height: 200px; display: flex; justify-content: center;">
+                  <video controls playsinline preload="metadata" style="width: 100%; max-height: 200px; object-fit: contain;" src="${videoUrl}"></video>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- Phase 1 Actions -->
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.85rem;">
+              <button class="btn btn-primary" style="background: #2563EB; font-weight: 800; padding: 0.75rem 1.6rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 14px rgba(37,99,235,0.35);" onclick="app.driverDepartToScene('${id}')">
+                <i class="fa-solid fa-truck-fast"></i> ACCEPT MISSION &amp; DEPART (EN ROUTE)
+              </button>
+              <button class="btn btn-secondary" onclick="app.reportAmbulanceUnavailablePrompt('${id}')" title="Vehicle breakdown or diversion">
+                <i class="fa-solid fa-wrench text-amber"></i> Report Vehicle Unavailable
+              </button>
+            </div>
+          ` : ''}
+
+          ${isPhase2 ? `
+            <div class="departure-action-banner" style="border-left: 4px solid #D97706; margin-bottom: 0.85rem;">
+              <div class="departure-banner-info">
+                <strong style="color: #D97706; font-size: 0.95rem;">
+                  <i class="fa-solid fa-route fa-beat"></i> Phase 2: En Route to Accident Scene
+                </strong>
+                <span>Driving to accident site. Estimated arrival in <strong>~${eta}</strong>. Maintain sirens and navigate directly.</span>
+              </div>
+            </div>
+
+            <!-- Quick Navigation & Comms -->
+            <div style="display: flex; gap: 0.65rem; flex-wrap: wrap; margin: 0.75rem 0;">
+              <a href="${gmapsUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="background: #0284C7; font-weight: 700; padding: 0.65rem 1.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fa-solid fa-diamond-turn-right"></i> Open GPS Turn-by-Turn Route
+              </a>
+              <a href="tel:+914428364999" class="btn btn-secondary" style="font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fa-solid fa-phone text-green"></i> Call Base Hospital Trauma Desk
+              </a>
+              <button type="button" class="btn btn-secondary" style="border-color: rgba(59,130,246,0.4); color: #3b82f6; font-weight: 600; display: flex; align-items: center; gap: 0.4rem;" onclick="app.requestGreenCorridor('${id}')">
+                <i class="fa-solid fa-traffic-light"></i> Request Green Corridor
+              </button>
+            </div>
+
+            ${videoUrl ? `
+              <div class="responder-footage-box" style="margin: 0.85rem 0; background: rgba(15, 23, 42, 0.55); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.75rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                  <span style="font-size: 0.82rem; font-weight: 700; color: var(--color-cyan); display: flex; align-items: center; gap: 0.45rem;">
+                    <i class="fa-solid fa-video"></i> Pre-Crash CCTV Clip (Accident Impact Inspection)
+                  </span>
+                  <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="app.openVideoModal('${id}')">
+                    <i class="fa-solid fa-expand"></i> Fullscreen
+                  </button>
+                </div>
+                <div style="background: #000; border-radius: 6px; overflow: hidden; max-height: 200px; display: flex; justify-content: center;">
+                  <video controls playsinline preload="metadata" style="width: 100%; max-height: 200px; object-fit: contain;" src="${videoUrl}"></video>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- Phase 2 Primary Progression Action -->
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem;">
+              <button class="btn btn-warning" style="background: #D97706; color: #fff; font-weight: 800; padding: 0.75rem 1.6rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 14px rgba(217,119,6,0.35);" onclick="app.driverArriveAtScene('${id}')">
+                <i class="fa-solid fa-location-dot"></i> ARRIVED AT ACCIDENT SCENE
+              </button>
+              <button class="btn btn-secondary" onclick="app.reportAmbulanceUnavailablePrompt('${id}')">
+                <i class="fa-solid fa-wrench text-amber"></i> Divert / Vehicle Issue
+              </button>
+            </div>
+          ` : ''}
+
+          ${isPhase3 ? `
+            <div class="departure-action-banner" style="border-left: 4px solid #10B981; margin-bottom: 0.85rem;">
+              <div class="departure-banner-info">
+                <strong style="color: #10B981; font-size: 0.95rem;">
+                  <i class="fa-solid fa-kit-medical"></i> Phase 3: Arrived on Scene — Casualty Triage & Stabilization
+                </strong>
+                <span>Paramedic unit active at collision scene. Complete quick 3-tap triage below to alert receiving hospital, then secure patient for transport.</span>
+              </div>
+            </div>
+
+            <!-- Ultra-Simple 3-Tap Triage Box -->
+            <div style="background: rgba(15, 23, 42, 0.45); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+                <span style="font-size: 0.85rem; font-weight: 800; color: var(--text-primary); display: flex; align-items: center; gap: 0.45rem;">
+                  <i class="fa-solid fa-bolt text-amber"></i> Quick 3-Tap Casualty Triage (Broadcasts Live to Hospital)
+                </span>
+                ${hasReport ? `
+                  <span class="responder-status-pill active" style="background: rgba(16, 185, 129, 0.12); color: #10B981; border-color: rgba(16, 185, 129, 0.4); font-weight: 700;">
+                    <i class="fa-solid fa-circle-check"></i> Logged: ${report.injuredCount} Victims (${report.injurySeverity})
+                  </span>
+                ` : `
+                  <span class="responder-status-pill" style="border-color: #F59E0B; color: #D97706;">
+                    <i class="fa-solid fa-clock"></i> Ready to Log
+                  </span>
+                `}
+              </div>
+
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.85rem; margin-bottom: 0.85rem;">
+                <!-- 1. Victims -->
+                <div>
+                  <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                    <i class="fa-solid fa-users text-red"></i> 1. Injured Victims:
+                  </label>
+                  <div class="triage-pill-btn-group" id="triage-victims-group-${id}">
+                    <button type="button" class="triage-pill-btn ${(report.injuredCount || 1) === 1 ? 'selected' : ''}" onclick="app.selectTriageVictims('${id}', 1)">1 Victim</button>
+                    <button type="button" class="triage-pill-btn ${(report.injuredCount) === 2 ? 'selected' : ''}" onclick="app.selectTriageVictims('${id}', 2)">2 Victims</button>
+                    <button type="button" class="triage-pill-btn ${(report.injuredCount) >= 3 ? 'selected' : ''}" onclick="app.selectTriageVictims('${id}', 3)">3+ Mass</button>
+                  </div>
+                  <input type="hidden" id="triage-victims-${id}" value="${report.injuredCount || 1}" />
+                </div>
+
+                <!-- 2. Severity -->
+                <div>
+                  <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                    <i class="fa-solid fa-heart-pulse text-amber"></i> 2. Condition:
+                  </label>
+                  <div class="triage-pill-btn-group" id="triage-sev-group-${id}">
+                    <button type="button" class="triage-pill-btn ${(!report.injurySeverity || report.injurySeverity === 'CRITICAL') ? 'selected' : ''}" onclick="app.selectTriageSeverity('${id}', 'CRITICAL')"><i class="fa-solid fa-circle" style="color: #ef4444; font-size: 0.65rem;"></i> Critical</button>
+                    <button type="button" class="triage-pill-btn ${report.injurySeverity === 'MODERATE' ? 'selected-amber' : ''}" onclick="app.selectTriageSeverity('${id}', 'MODERATE')"><i class="fa-solid fa-circle" style="color: #f59e0b; font-size: 0.65rem;"></i> Moderate</button>
+                    <button type="button" class="triage-pill-btn ${report.injurySeverity === 'MINOR' ? 'selected-green' : ''}" onclick="app.selectTriageSeverity('${id}', 'MINOR')"><i class="fa-solid fa-circle" style="color: #10b981; font-size: 0.65rem;"></i> Minor</button>
+                  </div>
+                  <input type="hidden" id="triage-severity-${id}" value="${report.injurySeverity || 'CRITICAL'}" />
+                </div>
+
+                <!-- 3. Backup -->
+                <div>
+                  <label style="font-size: 0.78rem; font-weight: 700; color: var(--text-primary); display: block; margin-bottom: 0.35rem;">
+                    <i class="fa-solid fa-truck-medical text-blue"></i> 3. Backup Unit:
+                  </label>
+                  <div class="triage-pill-btn-group" id="triage-extra-group-${id}">
+                    <button type="button" class="triage-pill-btn ${(report.extraAmbulancesNeeded || 0) === 0 ? 'selected-blue' : ''}" onclick="app.selectTriageExtra('${id}', 0)">None</button>
+                    <button type="button" class="triage-pill-btn ${(report.extraAmbulancesNeeded || 0) > 0 ? 'selected-amber' : ''}" onclick="app.selectTriageExtra('${id}', 1)"><i class="fa-solid fa-truck-medical"></i> Request +1 Unit</button>
+                  </div>
+                  <input type="hidden" id="triage-extra-${id}" value="${report.extraAmbulancesNeeded || 0}" />
+                  <input type="hidden" id="triage-notes-${id}" value="${escapeHtml(report.triageNotes || '')}" />
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: flex-end; align-items: center; gap: 0.65rem;">
+                <span id="triage-msg-${id}" style="font-size: 0.82rem; font-weight: 700; color: #10B981;"></span>
+                <button type="button" class="btn btn-secondary btn-sm" style="font-weight: 700; border-color: rgba(220,38,38,0.5); color: #EF4444; padding: 0.4rem 0.85rem;" onclick="app.handleDriverTriageSubmit(event, '${id}')">
+                  <i class="fa-solid fa-paper-plane"></i> Update Triage &amp; Alert Hospital
+                </button>
+              </div>
+            </div>
+
+            <!-- Phase 3 Primary Progression Action -->
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+              <button class="btn btn-info" style="background: #0284C7; color: #fff; font-weight: 800; padding: 0.75rem 1.6rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 14px rgba(2,132,199,0.35);" onclick="app.driverAdvancePatientTransport('${id}')">
+                <i class="fa-solid fa-hospital-user"></i> PATIENT SECURED &rarr; START TRANSPORT TO HOSPITAL
+              </button>
+              <button class="btn btn-secondary" onclick="app.reportAmbulanceUnavailablePrompt('${id}')">
+                <i class="fa-solid fa-wrench text-amber"></i> Vehicle Issue
+              </button>
+            </div>
+          ` : ''}
+
+          ${isPhase4 ? `
+            <div class="departure-action-banner" style="border-left: 4px solid #2563EB; margin-bottom: 0.85rem;">
+              <div class="departure-banner-info">
+                <strong style="color: #2563EB; font-size: 0.95rem;">
+                  <i class="fa-solid fa-hospital-user fa-beat"></i> Phase 4: En Route to Destination Hospital
+                </strong>
+                <span>Patient onboard and stabilized. Transporting directly to hospital emergency entrance.</span>
+              </div>
+            </div>
+
+            <!-- Destination Hospital Details -->
+            <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+              <div>
+                <h4 style="margin: 0 0 0.25rem 0; font-size: 1.05rem; color: var(--color-primary); display: flex; align-items: center; gap: 0.45rem;">
+                  <i class="fa-solid fa-hospital text-blue"></i> ${dispatch.assignedHospitalName || 'City General Hospital (Trauma Center)'}
+                </h4>
+                <div style="font-size: 0.82rem; color: var(--text-secondary); display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.35rem;">
+                  <span><i class="fa-solid fa-shield-heart text-green"></i> Trauma Center & ICU Alerted</span>
+                  <span><i class="fa-solid fa-location-dot text-blue"></i> Emergency Trauma Ward Intake</span>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <a href="https://www.google.com/maps/dir/?api=1&destination=13.0827,80.2707" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" style="background: #2563EB; font-weight: 700; padding: 0.55rem 1.1rem;">
+                  <i class="fa-solid fa-diamond-turn-right"></i> GPS Route to Hospital
+                </a>
+                <a href="tel:+919876543210" class="btn btn-secondary btn-sm" style="font-weight: 700; color: #10B981; border-color: rgba(16,185,129,0.4); padding: 0.55rem 1.1rem;">
+                  <i class="fa-solid fa-phone"></i> Call ER Desk
+                </a>
+              </div>
+            </div>
+
+            <!-- Phase 4 Primary Progression Action -->
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+              <button class="btn btn-success" style="background: #16A34A; color: #fff; font-weight: 800; padding: 0.75rem 1.75rem; font-size: 1rem; display: flex; align-items: center; gap: 0.6rem; box-shadow: 0 4px 14px rgba(22,163,74,0.35);" onclick="app.driverCompleteHandover('${id}')">
+                <i class="fa-solid fa-circle-check"></i> PATIENT HANDOVER COMPLETE (RESOLVE MISSION)
+              </button>
+            </div>
+          ` : ''}
+
+          ${isResolved ? `
+            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 1rem; margin-top: 0.5rem; display: flex; align-items: center; gap: 0.75rem;">
+              <i class="fa-solid fa-circle-check text-green" style="font-size: 1.5rem;"></i>
+              <div>
+                <strong style="color: #10B981; font-size: 0.95rem;">Mission Completed Successfully</strong>
+                <p style="margin: 0.15rem 0 0 0; font-size: 0.82rem; color: var(--text-secondary);">
+                  Patient safely transferred to emergency care at ${dispatch.assignedHospitalName || 'hospital'}. Ambulance unit is back on standby.
+                </p>
+              </div>
+            </div>
+          ` : ''}
+        </article>
+      `;
+    }).join('');
+  }
+
+  function renderHospitalAssignmentSection(id, data) {
+    const panel = document.getElementById(`hospital-assignment-panel-${id}`);
+    if (!panel) return;
+
+    if (!data) {
+      panel.innerHTML = `
+        <div class="hospital-assignment-alert warning">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Accident location unavailable. Hospital assignment requires verified accident coordinates.</span>
+        </div>`;
+      return;
+    }
+
+    if (data.status === 'MISSING_COORDINATES') {
+      panel.innerHTML = `
+        <div class="hospital-assignment-alert warning">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>Accident location unavailable. Hospital assignment requires verified accident coordinates.</span>
+        </div>`;
+      return;
+    }
+
+    if (data.status === 'NO_ELIGIBLE_HOSPITALS' || !data.recommended) {
+      panel.innerHTML = `
+        <div class="hospital-assignment-alert warning">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>No eligible hospital found. Manual dispatch review required.</span>
+        </div>`;
+      return;
+    }
+
+    if (data.status === 'ERROR') {
+      panel.innerHTML = `
+        <div class="hospital-assignment-alert danger">
+          <i class="fa-solid fa-circle-exclamation"></i>
+          <span>${escapeHtml(data.message || 'Error calculating destination hospital.')}</span>
+        </div>`;
+      return;
+    }
+
+    const inc = state.incidents.find((i) => (i.accidentId || i.id || i._id) === id);
+    const currentAssignedId = inc?.dispatch?.assignedHospitalId || data.assignedHospitalId;
+
+    const activeHospital = (currentAssignedId && data.candidates?.find((c) => String(c.hospitalId) === String(currentAssignedId)))
+      || data.recommended;
+
+    const isConfirmed = Boolean(currentAssignedId && String(currentAssignedId) === String(activeHospital.hospitalId));
+    const isTopRanked = String(activeHospital.hospitalId) === String(data.recommended.hospitalId);
+
+    const accLat = data.accidentCoordinates?.latitude ?? inc?.latitude;
+    const accLng = data.accidentCoordinates?.longitude ?? inc?.longitude;
+    const hospLat = activeHospital.latitude;
+    const hospLng = activeHospital.longitude;
+    const distLabel = activeHospital.distanceLabel || `${activeHospital.distanceKm} km straight-line`;
+
+    const gmapsDirectionsUrl = (Number.isFinite(accLat) && Number.isFinite(accLng) && Number.isFinite(hospLat) && Number.isFinite(hospLng))
+      ? `https://www.google.com/maps/dir/?api=1&origin=${accLat},${accLng}&destination=${hospLat},${hospLng}`
+      : `https://www.google.com/maps/search/?api=1&query=${hospLat},${hospLng}`;
+
+    const candidates = data.candidates || [];
+
+    panel.innerHTML = `
+      <!-- RECOMMENDED / ACTIVE DESTINATION CARD -->
+      <div class="hospital-card-recommended">
+        <div class="hospital-card-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem;">
+              <h4 style="margin: 0; font-size: 1.05rem; color: var(--color-primary); display: flex; align-items: center; gap: 0.45rem;">
+                <i class="fa-solid fa-hospital text-blue"></i> ${escapeHtml(activeHospital.hospitalName)}
+              </h4>
+              ${isTopRanked ? `
+                <span class="badge-recommended">
+                  <i class="fa-solid fa-star"></i> RECOMMENDED DESTINATION
+                </span>
+              ` : `
+                <span class="badge-recommended" style="background: #4b5563;">
+                  <i class="fa-solid fa-hospital-user"></i> SELECTED FACILITY
+                </span>
+              `}
+              <span class="dest-status-pill ${isConfirmed ? 'confirmed' : 'pending'}">
+                <i class="fa-solid ${isConfirmed ? 'fa-circle-check' : 'fa-clock'}"></i>
+                ${isConfirmed ? 'DESTINATION CONFIRMED' : 'PENDING CONFIRMATION'}
+              </span>
+            </div>
+            <div style="font-size: 0.82rem; color: var(--text-secondary);">
+              <i class="fa-solid fa-location-dot text-blue"></i>
+              ${isTopRanked
+                ? `Nearest emergency hospital to accident scene (${distLabel})`
+                : `Alternative facility selected by operator (${distLabel})`}
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            ${!isConfirmed ? `
+              <button class="btn btn-primary btn-sm" onclick="app.confirmDestinationHospital('${id}', '${activeHospital.hospitalId}')" style="background: #2563EB; font-weight: 700;">
+                <i class="fa-solid fa-circle-check"></i> Confirm Destination Hospital
+              </button>
+            ` : `
+              <span class="system-pill active" style="font-size: 0.78rem; padding: 0.35rem 0.65rem;">
+                <i class="fa-solid fa-lock"></i> DESTINATION CONFIRMED
+              </span>
+            `}
+            <a href="${gmapsDirectionsUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="color: #2563EB; border-color: #93C5FD; font-weight: 600;" title="Turn-by-turn navigation to hospital">
+              <i class="fa-solid fa-diamond-turn-right"></i> Navigate (Google Maps)
+            </a>
+          </div>
+        </div>
+
+        <!-- Clean Essential Metadata Grid (Only Important Information) -->
+        <div class="hospital-meta-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+          <div class="hospital-meta-item">
+            <span class="hospital-meta-label"><i class="fa-solid fa-ruler-horizontal text-blue"></i> Distance</span>
+            <span class="hospital-meta-val" style="font-size: 1.05rem; color: #2563EB; font-weight: 700;">${distLabel}</span>
+            <span style="font-size: 0.74rem; color: var(--text-secondary);">Nearest Emergency Facility</span>
+          </div>
+
+          <div class="hospital-meta-item">
+            <span class="hospital-meta-label"><i class="fa-solid fa-phone text-green"></i> Emergency Hotline</span>
+            <span class="hospital-meta-val">
+              <a href="tel:${escapeHtml(activeHospital.phone)}" class="hotline-quick-btn" title="Call Emergency Desk">
+                <i class="fa-solid fa-phone"></i> ${escapeHtml(activeHospital.phone)}
+              </a>
+            </span>
+            <span style="font-size: 0.72rem; color: var(--text-secondary);">${escapeHtml(activeHospital.email || 'Direct Emergency Line')}</span>
+          </div>
+
+          <div class="hospital-meta-item">
+            <span class="hospital-meta-label"><i class="fa-solid fa-shield-halved text-green"></i> Facility Type</span>
+            <span class="hospital-meta-val" style="color: #10B981; font-weight: 700; font-size: 0.88rem;">
+              <i class="fa-solid fa-circle-check"></i> Trauma Center Ready
+            </span>
+            <span style="font-size: 0.72rem; color: var(--text-secondary);">${activeHospital.regNo ? `Reg: ${escapeHtml(activeHospital.regNo)}` : '24/7 Emergency Care'}</span>
+          </div>
+
+          <div class="hospital-meta-item">
+            <span class="hospital-meta-label"><i class="fa-solid fa-location-dot text-red"></i> Address</span>
+            <span class="hospital-meta-val" style="font-size: 0.84rem; line-height: 1.3;">${escapeHtml(activeHospital.address)}</span>
+          </div>
+        </div>
+
+        <!-- Leaflet Interactive Mini-Map -->
+        <div style="margin-top: 0.85rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+            <span style="font-size: 0.76rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em;">
+              <i class="fa-solid fa-map"></i> Incident & Hospital Route
+            </span>
+            <span style="font-size: 0.74rem; color: var(--text-secondary);">
+              <i class="fa-solid fa-circle" style="color: #ef4444; font-size: 0.65rem;"></i> Accident Scene &nbsp;|&nbsp; <i class="fa-solid fa-circle" style="color: #3b82f6; font-size: 0.65rem;"></i> Hospital Destination
+            </span>
+          </div>
+          <div id="amb-dest-map-${id}" class="amb-dest-map-container"></div>
+        </div>
+
+        <!-- Alternatives Toggle & Reassignment -->
+        <div style="margin-top: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="alt-toggle-btn-${id}" onclick="app.toggleHospitalAlternatives('${id}')">
+            <i class="fa-solid fa-list-ol"></i> View Other Hospitals (${candidates.length})
+          </button>
+        </div>
+
+        <!-- Alternatives Expandable Drawer -->
+        <div id="hospital-alternatives-wrap-${id}" style="display: none; margin-top: 0.85rem; border-top: 1px dashed var(--border-color); padding-top: 0.75rem;">
+          <div style="font-size: 0.84rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.4rem;">
+            <i class="fa-solid fa-ranking-star text-blue"></i> Other Nearby Facilities:
+          </div>
+          <div style="overflow-x: auto;">
+            <table class="hospital-alternatives-table">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">Rank</th>
+                  <th>Hospital Facility</th>
+                  <th>Distance</th>
+                  <th>Hotline</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${candidates.map((cand, idx) => {
+                  const isSelected = String(cand.hospitalId) === String(activeHospital.hospitalId);
+                  const isRec = idx === 0;
+                  return `
+                    <tr style="${isSelected ? 'background: rgba(37, 99, 235, 0.08); font-weight: 600;' : ''}">
+                      <td>
+                        <span class="badge ${isRec ? 'badge-info' : 'badge-neutral'}">#${idx + 1}</span>
+                      </td>
+                      <td>
+                        <strong style="color: var(--color-primary);">${escapeHtml(cand.hospitalName)}</strong>
+                        ${isRec ? '<span class="badge-recommended" style="font-size: 0.68rem; margin-left: 0.35rem; padding: 0.15rem 0.4rem;">NEAREST</span>' : ''}
+                        <br><small style="color: var(--text-secondary);">${escapeHtml(cand.address)}</small>
+                      </td>
+                      <td>
+                        <span style="color: #2563EB; font-weight: 700;">${cand.distanceLabel || `${cand.distanceKm} km`}</span>
+                      </td>
+                      <td>
+                        <a href="tel:${escapeHtml(cand.phone)}" class="hotline-quick-btn" style="font-size: 0.8rem; padding: 0.2rem 0.5rem;">
+                          <i class="fa-solid fa-phone"></i> ${escapeHtml(cand.phone)}
+                        </a>
+                      </td>
+                      <td style="text-align: right;">
+                        ${isSelected ? `
+                          <span class="system-pill active" style="font-size: 0.72rem; padding: 0.2rem 0.55rem;">
+                            ${isConfirmed ? 'CURRENT DESTINATION' : 'RECOMMENDED'}
+                          </span>
+                        ` : `
+                          <button type="button" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.6rem; font-size: 0.76rem;" onclick="app.reassignDestinationHospital('${id}', '${cand.hospitalId}', '${escapeHtml(cand.hospitalName).replace(/'/g, "\\'")}')">
+                            <i class="fa-solid fa-arrow-right-arrow-left"></i> Select This Facility
+                          </button>
+                        `}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+
+    setTimeout(() => {
+      initAmbulanceMiniMap(id, accLat, accLng, hospLat, hospLng, activeHospital.hospitalName, distLabel);
+    }, 100);
+  }
+
+  function initAmbulanceMiniMap(id, accLat, accLng, hospLat, hospLng, hospName, distLabel) {
+    const mapContainer = document.getElementById(`amb-dest-map-${id}`);
+    if (!mapContainer || typeof L === 'undefined') return;
+
+    if (state.miniMapInstances[id]) {
+      try {
+        state.miniMapInstances[id].remove();
+      } catch (e) {
+      }
+      delete state.miniMapInstances[id];
+    }
+
+    if (!Number.isFinite(accLat) || !Number.isFinite(accLng) || !Number.isFinite(hospLat) || !Number.isFinite(hospLng)) {
+      return;
+    }
+
+    try {
+      const map = L.map(mapContainer, {
+        zoomControl: true,
+        attributionControl: false,
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+      }).addTo(map);
+
+      const accMarker = L.circleMarker([accLat, accLng], {
+        radius: 9,
+        fillColor: '#EF4444',
+        color: '#FFFFFF',
+        weight: 2.5,
+        fillOpacity: 0.95,
+      }).addTo(map);
+      accMarker.bindPopup(`<strong><i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i> Accident Scene</strong><br>GPS: ${accLat.toFixed(5)}°, ${accLng.toFixed(5)}°`);
+
+      const hospMarker = L.circleMarker([hospLat, hospLng], {
+        radius: 9,
+        fillColor: '#2563EB',
+        color: '#FFFFFF',
+        weight: 2.5,
+        fillOpacity: 0.95,
+      }).addTo(map);
+      hospMarker.bindPopup(`<strong><i class="fa-solid fa-hospital" style="color: #3b82f6;"></i> Destination Hospital</strong><br>${escapeHtml(hospName)}<br>GPS: ${hospLat.toFixed(5)}°, ${hospLng.toFixed(5)}°`);
+
+      const polyline = L.polyline([
+        [accLat, accLng],
+        [hospLat, hospLng],
+      ], {
+        color: '#2563EB',
+        weight: 3,
+        dashArray: '6, 8',
+        opacity: 0.85,
+      }).addTo(map);
+      polyline.bindPopup(`<strong>Straight-Line Distance:</strong> ${distLabel}<br><em>Road route depends on live navigation.</em>`);
+
+      map.fitBounds([
+        [accLat, accLng],
+        [hospLat, hospLng],
+      ], { padding: [35, 35] });
+
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 150);
+
+      state.miniMapInstances[id] = map;
+    } catch (err) {
+      console.error('Error initializing mini-map for incident', id, err);
+    }
+  }
+
   async function updateIncidentStatus(id, field, status, details = {}) {
     try {
       const updated = await apiFetch(`/incidents/${encodeURIComponent(id)}/status`, {
@@ -1559,7 +2350,6 @@
     }
   }
 
-  // --- 14. VIDEO ACCIDENT DETECTION LABORATORY ---
   function initDetection() {
     const fileInput = document.getElementById('video-file-input');
     const dropzone = document.getElementById('video-dropzone');
@@ -1588,21 +2378,23 @@
       });
     }
 
-    // Replay Crash Moment
     const replayBtn = document.getElementById('hud-replay-btn');
     if (replayBtn) {
       replayBtn.addEventListener('click', () => {
-        if (video && state.detectionResult?.frame) {
-          const fps = state.detectionResult.fps || 30;
-          const time = state.detectionResult.timestamp_sec ?? (state.detectionResult.frame / fps);
-          video.currentTime = Math.max(0, time - 2.5);
-          video.play();
+        if (video) {
+          if (state.detectionResult?.frame) {
+            const fps = state.detectionResult.fps || 30;
+            const time = state.detectionResult.timestamp_sec ?? (state.detectionResult.frame / fps);
+            video.currentTime = Math.max(0, time - 2.5);
+          } else {
+            video.currentTime = 0;
+          }
+          video.play().catch(() => {});
           setDetectionView('video');
         }
       });
     }
 
-    // Snapshot View Toggle
     const snapshotBtn = document.getElementById('hud-snapshot-btn');
     if (snapshotBtn) {
       snapshotBtn.addEventListener('click', () => {
@@ -1620,11 +2412,11 @@
     if (view === 'snapshot' && state.detectionResult?.snapshotBase64) {
       if (video) video.style.display = 'none';
       if (snapContainer) snapContainer.style.display = 'flex';
-      if (snapshotBtn) snapshotBtn.textContent = '🎬 View Video Playback';
+      if (snapshotBtn) snapshotBtn.innerHTML = '<i class="fa-solid fa-play"></i> Video Playback';
     } else {
       if (video) video.style.display = 'block';
       if (snapContainer) snapContainer.style.display = 'none';
-      if (snapshotBtn) snapshotBtn.textContent = '📷 View AI Frame Snapshot';
+      if (snapshotBtn) snapshotBtn.innerHTML = '<i class="fa-solid fa-camera"></i> Frame Snapshot';
     }
   }
 
@@ -1646,7 +2438,6 @@
     if (hudOverlay) hudOverlay.style.display = 'none';
     if (dropzone) dropzone.classList.remove('has-accident');
 
-    // Set video src
     if (state.detectionPreviewUrl) {
       URL.revokeObjectURL(state.detectionPreviewUrl);
     }
@@ -1669,7 +2460,6 @@
       state.detectionResult = res;
       if (scanningOverlay) scanningOverlay.style.display = 'none';
 
-      // Update HUD
       if (hudOverlay) hudOverlay.style.display = 'flex';
 
       const hudBadge = document.getElementById('hud-status-badge');
@@ -1683,7 +2473,7 @@
         if (dropzone) dropzone.classList.add('has-accident');
         if (hudBadge) {
           hudBadge.className = 'hud-alert-badge danger';
-          hudBadge.innerHTML = '<span class="hud-pulse-ring"></span> 🚨 ACCIDENT DETECTED';
+          hudBadge.innerHTML = '<span class="hud-pulse-ring"></span> <i class="fa-solid fa-triangle-exclamation"></i> ACCIDENT DETECTED';
         }
         if (hudFrame) hudFrame.textContent = `Frame #${res.frame || '--'}`;
         if (hudConf) hudConf.textContent = `Conf: ${Math.round((res.confidence || 0) * 100)}%`;
@@ -1694,7 +2484,6 @@
         if (replayBtn) replayBtn.style.display = 'inline-block';
         if (snapshotBtn) snapshotBtn.style.display = res.snapshotBase64 ? 'inline-block' : 'none';
 
-        // Auto seek video to collision moment
         const fps = res.fps || 30;
         const collisionTime = res.timestamp_sec ?? (res.frame / fps);
         if (video && Number.isFinite(collisionTime)) {
@@ -1702,13 +2491,12 @@
           video.pause();
         }
 
-        // Set snapshot image
         if (res.snapshotBase64) {
           const snapImg = document.getElementById('snapshot-img');
           const snapFrameTag = document.getElementById('snapshot-frame-tag');
           const snapConfTag = document.getElementById('snapshot-conf-tag');
           if (snapImg) snapImg.src = res.snapshotBase64;
-          if (snapFrameTag) snapFrameTag.textContent = `📸 Collision Keyframe #${res.frame}`;
+          if (snapFrameTag) snapFrameTag.innerHTML = `<i class="fa-solid fa-camera"></i> Collision Keyframe #${res.frame}`;
           if (snapConfTag) snapConfTag.textContent = `Confidence: ${(res.confidence * 100).toFixed(1)}%`;
         }
 
@@ -1718,7 +2506,7 @@
       } else {
         if (hudBadge) {
           hudBadge.className = 'hud-alert-badge success';
-          hudBadge.innerHTML = '✅ NORMAL — NO ACCIDENT DETECTED';
+          hudBadge.innerHTML = '<i class="fa-solid fa-circle-check"></i> NORMAL — NO ACCIDENT DETECTED';
         }
         if (hudFrame) hudFrame.textContent = 'Clean Video';
         if (hudConf) hudConf.textContent = '0 Collisions';
@@ -1748,7 +2536,6 @@
       stateTag.className = `system-pill ${res.accidentDetected ? 'role-pill' : 'active'}`;
     }
 
-    // Always clear any previous auto-dispatch timers first
     clearAutoDispatchTimer();
 
     if (res.accidentDetected) {
@@ -1949,12 +2736,12 @@
       }
 
       if (statusEl) {
-        statusEl.innerHTML = `✅ <strong>Incident #${saved.accidentId || saved.id} Saved!</strong> ${isAuto ? 'Auto-dispatched' : 'Alerts dispatched'} to nearby trauma centers.`;
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color: #10b981;"></i> <strong>Incident #${saved.accidentId || saved.id} Saved!</strong> ${isAuto ? 'Auto-dispatched' : 'Alerts dispatched'} to nearby trauma centers.`;
       }
 
       const msgEl = document.getElementById('detection-message');
       if (msgEl) {
-        msgEl.innerHTML = `✅ Collision incident <strong>#${saved.accidentId || saved.id}</strong> ${isAuto ? 'auto-dispatched' : 'dispatched'} successfully!`;
+        msgEl.innerHTML = `<i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Collision incident <strong>#${saved.accidentId || saved.id}</strong> ${isAuto ? 'auto-dispatched' : 'dispatched'} successfully!`;
       }
     } catch (err) {
       if (statusEl) statusEl.textContent = `Failed to save: ${err.message}`;
@@ -1966,9 +2753,7 @@
     }
   }
 
-  // --- 15. SEARCH & FILTER LISTENERS ---
   function initFilters() {
-    // Clickable Filter Tabs (Dashboard)
     ['all', 'pending', 'assigned', 'dispatched', 'resolved'].forEach((filter) => {
       const btn = document.getElementById(`hfilter-${filter}`);
       if (btn) {
@@ -1979,7 +2764,6 @@
       }
     });
 
-    // Queue Filter Buttons (Dashboard)
     ['all', 'emergency', 'resolved'].forEach((qf) => {
       const btn = document.getElementById(`qfilter-${qf}`);
       if (btn) {
@@ -1992,7 +2776,6 @@
       }
     });
 
-    // Alerts filters
     ['all', 'emergency', 'resolved'].forEach((f) => {
       const btn = document.getElementById(`alerts-filter-${f}`);
       if (btn) {
@@ -2005,7 +2788,6 @@
       }
     });
 
-    // Incidents Search
     const searchInput = document.getElementById('incidents-search-input');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
@@ -2014,7 +2796,6 @@
       });
     }
 
-    // Facility Forms
     const hospForm = document.getElementById('hospital-facility-form');
     if (hospForm) {
       hospForm.addEventListener('submit', async (e) => {
@@ -2028,7 +2809,7 @@
 
           const res = await apiFetch('/auth/facility', {
             method: 'PATCH',
-            body: JSON.stringify({ latitude: lat, longitude: lng, contactPhone, alertConsent }),
+            body: JSON.stringify({ latitude: lat, longitude: lng, phone: contactPhone, contactPhone, alertConsent }),
           });
           state.user = res.user;
           if (msg) {
@@ -2057,7 +2838,7 @@
 
           const res = await apiFetch('/auth/facility', {
             method: 'PATCH',
-            body: JSON.stringify({ latitude: lat, longitude: lng, contactPhone, alertConsent }),
+            body: JSON.stringify({ latitude: lat, longitude: lng, phone: contactPhone, contactPhone, alertConsent }),
           });
           state.user = res.user;
           if (msg) {
@@ -2073,7 +2854,6 @@
       });
     }
 
-    // Mobile drawer toggle
     const menuToggle = document.getElementById('menu-toggle-btn');
     const sidebar = document.getElementById('sidebar');
     if (menuToggle && sidebar) {
@@ -2082,7 +2862,6 @@
       });
     }
 
-    // Nav button clicks
     document.querySelectorAll('.sidebar .nav-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const tab = btn.getAttribute('data-tab');
@@ -2091,7 +2870,6 @@
     });
   }
 
-  // --- 16. EXPOSED GLOBAL APP API ---
   window.app = {
     selectIncident: function (id) {
       state.selectedIncidentId = (state.selectedIncidentId === id ? null : id);
@@ -2110,7 +2888,6 @@
       }
     },
     updateIncidentStatus,
-    // --- HOSPITAL DISPATCH WORKFLOW METHODS ---
     acceptHospitalAssignment: async function (id) {
       try {
         const res = await apiFetch(`/incidents/${id}/dispatch/accept`, { method: 'POST' });
@@ -2122,36 +2899,140 @@
       }
     },
 
-    rejectHospitalAssignmentPrompt: async function (id) {
-      const reason = prompt('Please specify reason for declining / diverting this incident:', 'ICU at capacity / trauma unit diverted');
-      if (reason === null) return;
+    currentDeclineAction: null,
+
+    openDeclineModal: function (id, mode = 'decline') {
+      this.currentDeclineAction = { id, mode };
+      const modal = document.getElementById('decline-modal');
+      const titleEl = document.getElementById('decline-modal-title');
+      const subtitleEl = document.getElementById('decline-modal-subtitle');
+      const quickContainer = document.getElementById('decline-quick-reasons');
+      const inputEl = document.getElementById('decline-reason-input');
+      const submitBtn = document.getElementById('decline-modal-submit-btn');
+
+      if (!modal) return;
+
+      const isUnavailable = mode === 'unavailable';
+      if (titleEl) {
+        titleEl.innerHTML = isUnavailable
+          ? '<i class="fa-solid fa-truck-field text-amber"></i> Ambulance Fleet Unavailable'
+          : '<i class="fa-solid fa-ban text-red"></i> Decline / Divert Hospital Assignment';
+        titleEl.style.color = isUnavailable ? '#f59e0b' : '#ef4444';
+      }
+      if (subtitleEl) {
+        subtitleEl.textContent = isUnavailable
+          ? 'Specify vehicle deployment status. Incident will be immediately re-routed to the backup facility.'
+          : 'Specify clinical capacity reason. Incident will be diverted to the nearest regional trauma center.';
+      }
+
+      const quickReasons = isUnavailable
+        ? [
+            'All Ambulances Deployed',
+            'Vehicle Breakdown / Maintenance',
+            'Paramedic Crew On Call',
+            'Severe Transit Delay',
+          ]
+        : [
+            'ICU Beds at Capacity',
+            'Trauma Bay Full',
+            'Emergency OR Occupied',
+            'CT / Diagnostics Offline',
+            'Specialist Physician Unavailable',
+          ];
+
+      if (quickContainer) {
+        quickContainer.innerHTML = quickReasons
+          .map(
+            (r, idx) =>
+              `<button type="button" class="decline-reason-chip ${idx === 0 ? 'selected' : ''}" onclick="app.selectDeclineQuickReason('${escapeHtml(r)}')">${escapeHtml(r)}</button>`
+          )
+          .join('');
+      }
+
+      const defaultReason = quickReasons[0] || '';
+      if (inputEl) {
+        inputEl.value = defaultReason;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = isUnavailable
+          ? '<i class="fa-solid fa-truck-field"></i> Report Unavailable &amp; Escalate'
+          : '<i class="fa-solid fa-triangle-exclamation"></i> Confirm Decline &amp; Divert';
+        submitBtn.style.background = isUnavailable ? '#d97706' : '#dc2626';
+      }
+
+      modal.style.display = 'flex';
+      setTimeout(() => {
+        if (inputEl) inputEl.focus();
+      }, 50);
+    },
+
+    closeDeclineModal: function () {
+      const modal = document.getElementById('decline-modal');
+      if (modal) modal.style.display = 'none';
+      this.currentDeclineAction = null;
+    },
+
+    selectDeclineQuickReason: function (text) {
+      const inputEl = document.getElementById('decline-reason-input');
+      if (inputEl) inputEl.value = text;
+      const chips = document.querySelectorAll('#decline-quick-reasons .decline-reason-chip');
+      chips.forEach((c) => {
+        if (c.textContent.trim() === text) {
+          c.classList.add('selected');
+        } else {
+          c.classList.remove('selected');
+        }
+      });
+    },
+
+    submitDeclineModal: async function () {
+      if (!this.currentDeclineAction || !this.currentDeclineAction.id) {
+        this.closeDeclineModal();
+        return;
+      }
+      const { id, mode } = this.currentDeclineAction;
+      const inputEl = document.getElementById('decline-reason-input');
+      const submitBtn = document.getElementById('decline-modal-submit-btn');
+      const fallbackDefault = mode === 'unavailable' ? 'All vehicle units deployed' : 'Facility diverted / at capacity';
+      const reason = (inputEl ? inputEl.value.trim() : '') || fallbackDefault;
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Escalation...';
+      }
+
+      const endpoint = mode === 'unavailable' ? `/incidents/${id}/dispatch/unavailable` : `/incidents/${id}/dispatch/reject`;
+
       try {
-        const res = await apiFetch(`/incidents/${id}/dispatch/reject`, {
+        const res = await apiFetch(endpoint, {
           method: 'POST',
-          body: JSON.stringify({ reason: reason.trim() || 'Facility diverted' }),
+          body: JSON.stringify({ reason }),
         });
         upsertIncident(res);
         renderAllViews();
-        showToastNotification(`Declined incident #${id}. Auto-escalating to backup hospital.`);
+        this.closeDeclineModal();
+
+        const successMsg = mode === 'unavailable'
+          ? `Ambulance marked unavailable for incident #${id}. Auto-escalating to backup facility.`
+          : `Declined incident #${id}. Auto-escalated to backup trauma center.`;
+        showToastNotification(successMsg);
       } catch (err) {
-        alert(err.message);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Retry';
+        }
+        alert(err.message || 'Escalation failed. Please try again.');
       }
     },
 
-    reportAmbulanceUnavailablePrompt: async function (id) {
-      const reason = prompt('Specify ambulance unavailability reason:', 'All vehicle units deployed / mechanical delay');
-      if (reason === null) return;
-      try {
-        const res = await apiFetch(`/incidents/${id}/dispatch/unavailable`, {
-          method: 'POST',
-          body: JSON.stringify({ reason: reason.trim() || 'Ambulance unavailable' }),
-        });
-        upsertIncident(res);
-        renderAllViews();
-        showToastNotification(`Ambulance reported unavailable for #${id}. Escalated to backup facility.`);
-      } catch (err) {
-        alert(err.message);
-      }
+    rejectHospitalAssignmentPrompt: function (id) {
+      this.openDeclineModal(id, 'decline');
+    },
+
+    reportAmbulanceUnavailablePrompt: function (id) {
+      this.openDeclineModal(id, 'unavailable');
     },
 
     dispatchAmbulance: async function (id) {
@@ -2287,12 +3168,10 @@
 
       videos.forEach((video) => {
         if (mode === 'impact') {
-          // If already clipped (typically 20s-28s long), impact is at 20s or duration
           const targetTime = video.duration && video.duration <= 35 ? Math.min(20, Math.max(0, video.duration - 2)) : collisionSec;
           video.currentTime = Math.max(0, targetTime);
           video.play().catch(() => {});
         } else if (mode === 'start') {
-          // Start of clip (20s before impact)
           const targetTime = video.duration && video.duration <= 35 ? 0 : Math.max(0, collisionSec - 20);
           video.currentTime = targetTime;
           video.play().catch(() => {});
@@ -2324,7 +3203,7 @@
 
       if (hudBadge) {
         hudBadge.className = 'hud-alert-badge danger';
-        hudBadge.innerHTML = '<span class="hud-pulse-ring"></span> 🚨 ACCIDENT DETECTED';
+        hudBadge.innerHTML = '<span class="hud-pulse-ring"></span> <i class="fa-solid fa-triangle-exclamation"></i> ACCIDENT DETECTED';
       }
       if (hudFrame) hudFrame.textContent = `Frame #${res.frame}`;
       if (hudConf) hudConf.textContent = `Conf: ${Math.round(res.confidence * 100)}%`;
@@ -2336,23 +3215,333 @@
 
       renderDetectionBreakdown(res);
     },
+
+    driverDepartToScene: async function (id) {
+      try {
+        const ambInput = document.getElementById('amb-driver-my-id');
+        const ambulanceId = ambInput ? ambInput.value.trim() : (state.user?.details?.ambulanceUnitId || 'AMB-108');
+        const driverName = document.getElementById('amb-driver-my-name')?.value?.trim() || state.user?.details?.driverName || state.user?.name || 'Karthik (108 Paramedic Lead)';
+        const driverPhone = document.getElementById('amb-driver-my-phone')?.value?.trim() || state.user?.details?.contactPhone || '+919840122108';
+        const driverCapability = document.getElementById('amb-driver-capability')?.value?.trim() || state.user?.details?.capability || 'ALS';
+
+        const res = await apiFetch(`/incidents/${id}/dispatch/ambulance`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ambulanceId,
+            status: 'EN_ROUTE',
+            driverName,
+            driverPhone,
+            driverCapability,
+          }),
+        });
+        upsertIncident(res);
+        renderAllViews();
+        showToastNotification(`Unit En Route: Ambulance (${ambulanceId}) dispatched to accident scene.`);
+      } catch (err) {
+        alert(err.message);
+      }
+    },
+
+    driverArriveAtScene: async function (id) {
+      try {
+        const ambInput = document.getElementById('amb-driver-my-id');
+        const ambulanceId = ambInput ? ambInput.value.trim() : (state.user?.details?.ambulanceUnitId || 'AMB-108');
+        const driverName = document.getElementById('amb-driver-my-name')?.value?.trim() || state.user?.details?.driverName || state.user?.name || 'Karthik (108 Paramedic Lead)';
+        const driverPhone = document.getElementById('amb-driver-my-phone')?.value?.trim() || state.user?.details?.contactPhone || '+919840122108';
+        const driverCapability = document.getElementById('amb-driver-capability')?.value?.trim() || state.user?.details?.capability || 'ALS';
+
+        const res = await apiFetch(`/incidents/${id}/dispatch/ambulance`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ambulanceId,
+            status: 'ARRIVED',
+            driverName,
+            driverPhone,
+            driverCapability,
+          }),
+        });
+        upsertIncident(res);
+        renderAllViews();
+        showToastNotification('Unit Arrived: Ambulance arrived at accident scene.');
+      } catch (err) {
+        alert(err.message);
+      }
+    },
+
+    requestGreenCorridor: function (id) {
+      showToastNotification(`Green Corridor Request: Emergency priority route signal dispatched to Traffic Police command!`);
+      if (state.socket) {
+        state.socket.emit('dispatch:green_corridor', { incidentId: id, timestamp: new Date() });
+      }
+    },
+
+    driverAdvancePatientTransport: async function (id) {
+      try {
+        const ambInput = document.getElementById('amb-driver-my-id');
+        const ambulanceId = ambInput ? ambInput.value.trim() : (state.user?.details?.ambulanceUnitId || 'AMB-108');
+        const driverName = document.getElementById('amb-driver-my-name')?.value?.trim() || state.user?.details?.driverName || state.user?.name || 'Karthik (108 Paramedic Lead)';
+        const driverPhone = document.getElementById('amb-driver-my-phone')?.value?.trim() || state.user?.details?.contactPhone || '+919840122108';
+        const driverCapability = document.getElementById('amb-driver-capability')?.value?.trim() || state.user?.details?.capability || 'ALS';
+
+        const res = await apiFetch(`/incidents/${id}/dispatch/ambulance`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ambulanceId,
+            status: 'TRANSPORT',
+            driverName,
+            driverPhone,
+            driverCapability,
+          }),
+        });
+        upsertIncident(res);
+        renderAllViews();
+        showToastNotification('Patient Transport: Ambulance en route to destination hospital.');
+      } catch (err) {
+        alert(err.message);
+      }
+    },
+
+    driverCompleteHandover: async function (id) {
+      try {
+        const ambInput = document.getElementById('amb-driver-my-id');
+        const ambulanceId = ambInput ? ambInput.value.trim() : (state.user?.details?.ambulanceUnitId || 'AMB-108');
+        const driverName = document.getElementById('amb-driver-my-name')?.value?.trim() || state.user?.details?.driverName || state.user?.name || 'Karthik (108 Paramedic Lead)';
+        const driverPhone = document.getElementById('amb-driver-my-phone')?.value?.trim() || state.user?.details?.contactPhone || '+919840122108';
+        const driverCapability = document.getElementById('amb-driver-capability')?.value?.trim() || state.user?.details?.capability || 'ALS';
+
+        const res = await apiFetch(`/incidents/${id}/dispatch/ambulance`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ambulanceId,
+            status: 'RESOLVED',
+            driverName,
+            driverPhone,
+            driverCapability,
+          }),
+        });
+        upsertIncident(res);
+        renderAllViews();
+        showToastNotification('Handover Complete: Patient safely transferred to hospital. Mission resolved.');
+      } catch (err) {
+        alert(err.message);
+      }
+    },
+
+    selectTriageVictims: function (id, count) {
+      const input = document.getElementById(`triage-victims-${id}`);
+      if (input) input.value = count;
+      const group = document.getElementById(`triage-victims-group-${id}`);
+      if (group) {
+        group.querySelectorAll('.triage-pill-btn').forEach((btn, idx) => {
+          btn.classList.toggle('selected', idx + 1 === Number(count));
+        });
+      }
+    },
+
+    selectTriageSeverity: function (id, sev) {
+      const input = document.getElementById(`triage-severity-${id}`);
+      if (input) input.value = sev;
+      const group = document.getElementById(`triage-sev-group-${id}`);
+      if (group) {
+        group.querySelectorAll('.triage-pill-btn').forEach((btn) => {
+          btn.classList.remove('selected', 'selected-amber', 'selected-green');
+          const isMatch = btn.getAttribute('data-val') === sev || btn.getAttribute('onclick')?.includes(sev);
+          if (isMatch) {
+            if (sev === 'CRITICAL' || sev === 'SEVERE') btn.classList.add('selected');
+            else if (sev === 'MODERATE') btn.classList.add('selected-amber');
+            else if (sev === 'MINOR') btn.classList.add('selected-green');
+          }
+        });
+      }
+    },
+
+    selectTriageAmbType: function (id, ambType) {
+      const input = document.getElementById(`triage-ambtype-${id}`);
+      if (input) input.value = ambType;
+      const group = document.getElementById(`triage-ambtype-group-${id}`);
+      if (group) {
+        group.querySelectorAll('.triage-pill-btn').forEach((btn) => {
+          btn.classList.toggle('selected-blue', btn.getAttribute('onclick')?.includes(ambType));
+        });
+      }
+    },
+
+    selectTriageExtra: function (id, extra) {
+      const input = document.getElementById(`triage-extra-${id}`);
+      if (input) input.value = extra;
+      const group = document.getElementById(`triage-extra-group-${id}`);
+      if (group) {
+        group.querySelectorAll('.triage-pill-btn').forEach((btn) => {
+          btn.classList.remove('selected', 'selected-amber', 'selected-blue');
+          const isMatch = btn.getAttribute('data-val') === String(extra) || btn.getAttribute('onclick')?.includes(`selectTriageExtra('${id}', ${extra})`);
+          if (isMatch) {
+            if (Number(extra) === 0) btn.classList.add('selected-blue');
+            else if (Number(extra) >= 3) btn.classList.add('selected');
+            else btn.classList.add('selected-amber');
+          }
+        });
+      }
+    },
+
+    appendTriageNote: function (id, noteText) {
+      const input = document.getElementById(`triage-notes-${id}`);
+      if (!input) return;
+      const cur = input.value.trim();
+      if (cur.toLowerCase().includes(noteText.toLowerCase())) return;
+      input.value = cur ? `${cur}, ${noteText}` : noteText;
+    },
+
+    handleDriverTriageSubmit: async function (e, id) {
+      e.preventDefault();
+      try {
+        const injuredCount = Number(document.getElementById(`triage-victims-${id}`)?.value || 1);
+        const injurySeverity = document.getElementById(`triage-severity-${id}`)?.value || 'CRITICAL';
+        const extraAmbulancesNeeded = Number(document.getElementById(`triage-extra-${id}`)?.value || 0);
+        const ambulanceTypeRequired = (injurySeverity === 'CRITICAL' || injurySeverity === 'SEVERE' || extraAmbulancesNeeded > 0) ? 'ALS' : 'BLS';
+        const triageNotes = document.getElementById(`triage-notes-${id}`)?.value?.trim() || '';
+        const driverName = document.getElementById('amb-driver-my-name')?.value?.trim() || 'Ambulance EMT Lead';
+        const driverPhone = document.getElementById('amb-driver-my-phone')?.value?.trim() || '';
+
+        const res = await apiFetch(`/incidents/${id}/dispatch/driver-triage`, {
+          method: 'POST',
+          body: JSON.stringify({
+            injuredCount,
+            injurySeverity,
+            ambulanceTypeRequired,
+            extraAmbulancesNeeded,
+            triageNotes,
+            driverName,
+            driverPhone,
+          }),
+        });
+
+        upsertIncident(res);
+        renderAllViews();
+
+        const msgEl = document.getElementById(`triage-msg-${id}`);
+        if (msgEl) {
+          msgEl.textContent = 'Triage report updated and sent to hospital!';
+          setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 4000);
+        }
+
+        showToastNotification(`Triage Updated: ${injuredCount} victims (${injurySeverity}) reported.`);
+      } catch (err) {
+        alert(`Error updating triage report: ${err.message}`);
+      }
+    },
+
+    refreshIncidents: async function () {
+      try {
+        const data = await apiFetch('/incidents');
+        state.incidents = Array.isArray(data) ? data : (data.incidents || []);
+        renderAllViews();
+        showToastNotification('Emergency incident feed refreshed.');
+      } catch (err) {
+        alert(err.message);
+      }
+    },
+
+    loadRecommendedHospitals: async function (id, force = false) {
+      if (!id) return;
+      if (force) {
+        delete state.recommendedHospitalsCache[id];
+      }
+      if (state.recommendedHospitalsCache[id]) {
+        renderHospitalAssignmentSection(id, state.recommendedHospitalsCache[id]);
+        return;
+      }
+      if (state.recommendedLoading[id]) return;
+      state.recommendedLoading[id] = true;
+
+      try {
+        const data = await apiFetch(`/incidents/${encodeURIComponent(id)}/recommended-hospitals`);
+        state.recommendedHospitalsCache[id] = data;
+        renderHospitalAssignmentSection(id, data);
+      } catch (err) {
+        const errPayload = {
+          status: 'ERROR',
+          message: err.message || 'Unable to retrieve recommended hospitals.',
+        };
+        state.recommendedHospitalsCache[id] = errPayload;
+        renderHospitalAssignmentSection(id, errPayload);
+      } finally {
+        state.recommendedLoading[id] = false;
+      }
+    },
+
+    confirmDestinationHospital: async function (id, hospitalId) {
+      if (!id || !hospitalId) return;
+      try {
+        const res = await apiFetch(`/incidents/${encodeURIComponent(id)}/dispatch/assign-destination`, {
+          method: 'POST',
+          body: JSON.stringify({
+            hospitalId,
+            reason: 'Accident location nearest facility confirmed by ambulance operator',
+          }),
+        });
+        delete state.recommendedHospitalsCache[id];
+        upsertIncident(res);
+        renderAllViews();
+        showToastNotification(`Destination hospital confirmed: ${res.dispatch?.assignedHospitalName || 'Hospital'}!`);
+      } catch (err) {
+        alert(`Destination confirmation error: ${err.message}`);
+      }
+    },
+
+    reassignDestinationHospital: async function (id, hospitalId, hospitalName) {
+      if (!id || !hospitalId) return;
+      const promptText = `Enter reason for reassigning destination to ${hospitalName || 'selected hospital'} (e.g. Specialized trauma bed required):`;
+      const reason = prompt(promptText, 'Specialized trauma / ICU bed capability required');
+      if (reason === null) return;
+      try {
+        const res = await apiFetch(`/incidents/${encodeURIComponent(id)}/dispatch/assign-destination`, {
+          method: 'POST',
+          body: JSON.stringify({
+            hospitalId,
+            reason: reason.trim() || 'Manual facility reassignment by operator',
+          }),
+        });
+        delete state.recommendedHospitalsCache[id];
+        upsertIncident(res);
+        renderAllViews();
+        showToastNotification(`Destination reassigned to: ${res.dispatch?.assignedHospitalName || hospitalName}!`);
+      } catch (err) {
+        alert(`Reassignment error: ${err.message}`);
+      }
+    },
+
+    toggleHospitalAlternatives: function (id) {
+      const wrap = document.getElementById(`hospital-alternatives-wrap-${id}`);
+      const btn = document.getElementById(`alt-toggle-btn-${id}`);
+      if (!wrap) return;
+      const isHidden = wrap.style.display === 'none' || !wrap.style.display;
+      wrap.style.display = isHidden ? 'block' : 'none';
+      if (btn) {
+        btn.innerHTML = isHidden
+          ? '<i class="fa-solid fa-chevron-up"></i> Hide Ranked Alternatives'
+          : '<i class="fa-solid fa-list-ol"></i> View Ranked Alternatives';
+      }
+    },
   };
 
-  // --- 17. ON DOM CONTENT LOADED ENTRY ---
   document.addEventListener('DOMContentLoaded', async () => {
     initClock();
     initAuth();
     initDetection();
     initFilters();
 
-    // Check existing session
     const token = sessionStorage.getItem('aerisToken');
     if (token) {
       try {
         const res = await apiFetch('/auth/me');
         handleLoginSuccess(res.user);
-      } catch {
-        sessionStorage.removeItem('aerisToken');
+      } catch (err) {
+        if (err.message && (err.message.includes('401') || err.message.toLowerCase().includes('expired') || err.message.toLowerCase().includes('log in'))) {
+          sessionStorage.removeItem('aerisToken');
+        } else {
+          console.warn('[AERIS] Backend unreachable during session verification. Preserving session:', err.message);
+          showToastNotification('Connecting to AERIS backend... Please wait a moment.', 'warning');
+        }
       }
     }
   });

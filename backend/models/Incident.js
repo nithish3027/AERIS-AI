@@ -52,7 +52,7 @@ const dispatchTimelineSchema = new mongoose.Schema({
 const dispatchSchema = new mongoose.Schema({
   status: {
     type: String,
-    enum: ['UNASSIGNED', 'ALERTED', 'ASSIGNED', 'DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'UNAVAILABLE', 'RESOLVED', 'REJECTED'],
+    enum: ['UNASSIGNED', 'ALERTED', 'ASSIGNED', 'DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'TRANSPORT', 'UNAVAILABLE', 'RESOLVED', 'REJECTED'],
     default: 'UNASSIGNED',
   },
   assignedHospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -61,9 +61,12 @@ const dispatchSchema = new mongoose.Schema({
   ambulanceId: { type: String, default: '' },
   ambulanceStatus: {
     type: String,
-    enum: ['NONE', 'IDLE', 'DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'UNAVAILABLE', 'RESOLVED'],
+    enum: ['NONE', 'IDLE', 'DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'TRANSPORT', 'UNAVAILABLE', 'RESOLVED'],
     default: 'NONE',
   },
+  driverName: { type: String, default: '' },
+  driverPhone: { type: String, default: '' },
+  driverCapability: { type: String, default: 'ALS' },
   dispatchedAt: { type: Date, default: null },
   arrivedAt: { type: Date, default: null },
   etaMinutes: { type: Number, default: null },
@@ -75,6 +78,17 @@ const dispatchSchema = new mongoose.Schema({
   rejectionReason: { type: String, default: '' },
   candidates: { type: [candidateHospitalSchema], default: () => [] },
   timeline: { type: [dispatchTimelineSchema], default: () => [] },
+}, { _id: false });
+
+const driverReportSchema = new mongoose.Schema({
+  injuredCount: { type: Number, default: 0 },
+  injurySeverity: { type: String, default: 'UNKNOWN' },
+  ambulanceTypeRequired: { type: String, default: 'BLS' },
+  extraAmbulancesNeeded: { type: Number, default: 0 },
+  triageNotes: { type: String, default: '' },
+  reportedAt: { type: Date, default: null },
+  driverName: { type: String, default: '' },
+  driverPhone: { type: String, default: '' },
 }, { _id: false });
 
 const incidentSchema = new mongoose.Schema({
@@ -101,6 +115,7 @@ const incidentSchema = new mongoose.Schema({
   hospitalResponse: { type: responseSchema, default: () => ({}) },
   policeResponse: { type: responseSchema, default: () => ({}) },
   dispatch: { type: dispatchSchema, default: () => ({}) },
+  driverReport: { type: driverReportSchema, default: () => ({}) },
   location: { type: String, default: '' },
   severity: { type: String, default: 'CRITICAL' },
   time: { type: String, default: '' },

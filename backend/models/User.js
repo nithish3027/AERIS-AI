@@ -4,29 +4,31 @@ export const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String, required: true },
-  role: { type: String, enum: ['admin', 'police', 'hospital'], required: true },
+  role: { type: String, enum: ['admin', 'police', 'hospital', 'ambulance'], required: true },
   details: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 
 export const Admin = mongoose.models.Admin || mongoose.model('Admin', userSchema, 'admins');
 export const Police = mongoose.models.Police || mongoose.model('Police', userSchema, 'police');
 export const Hospital = mongoose.models.Hospital || mongoose.model('Hospital', userSchema, 'hospitals');
+export const Ambulance = mongoose.models.Ambulance || mongoose.model('Ambulance', userSchema, 'ambulances');
 
 export function getModelByRole(role) {
   if (role === 'admin') return Admin;
   if (role === 'police') return Police;
   if (role === 'hospital') return Hospital;
+  if (role === 'ambulance') return Ambulance;
   return null;
 }
 
-export const ALL_MODELS = [Admin, Police, Hospital];
+export const ALL_MODELS = [Admin, Police, Hospital, Ambulance];
 
-// Unified helper for backward compatibility across services and tests
 const User = {
   schema: userSchema,
   Admin,
   Police,
   Hospital,
+  Ambulance,
   getModelByRole,
   ALL_MODELS,
 

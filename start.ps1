@@ -22,6 +22,6 @@ if (Test-Path "$root\ai_service\app.py") {
 }
 
 Start-Process powershell -ArgumentList "-NoExit -Command `$Host.UI.RawUI.WindowTitle='AERIS Backend [5000]'; Set-Location '$root\backend'; npm run dev"
-Start-Sleep -Seconds 1
+Start-Sleep -Seconds 3
 
 Start-Process powershell -ArgumentList "-NoExit -Command `$Host.UI.RawUI.WindowTitle='AERIS Frontend [5173]'; Set-Location '$root\frontend'; npm run dev"

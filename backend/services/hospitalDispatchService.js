@@ -3,20 +3,14 @@ import User from '../models/User.js';
 import Incident from '../models/Incident.js';
 import { distanceKm } from './incidentAlerts.js';
 
-const AVERAGE_URBAN_SPEED_KMH = 40; // 40 km/h realistic emergency transit
+const AVERAGE_URBAN_SPEED_KMH = 40; 
 
-/**
- * Calculates estimated road travel time in minutes based on distance and average response speed.
- */
 export function estimateTravelTimeMinutes(distanceInKm) {
   if (!Number.isFinite(distanceInKm) || distanceInKm <= 0) return 2;
   const hours = distanceInKm / AVERAGE_URBAN_SPEED_KMH;
   return Math.max(2, Math.round(hours * 60));
 }
 
-/**
- * Finds and ranks eligible hospitals based on distance, travel time, and capacity.
- */
 export async function findEligibleHospitals(latitude, longitude, maxRadiusKm = 50) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
 
@@ -39,8 +33,6 @@ export async function findEligibleHospitals(latitude, longitude, maxRadiusKm = 5
     const capacity = Number(hosp.details?.capacity || hosp.details?.availableAmbulances || 5);
     const hospName = hosp.details?.hospitalName || hosp.name || 'Medical Trauma Center';
 
-    // Multi-factor ranking score: lower is better
-    // Distance (60%), Travel Time (40%), capacity bonus
     const score = (dist * 0.6) + (travelTime * 0.4) - (capacity > 0 ? 0.5 : 0);
 
     candidates.push({
@@ -59,9 +51,6 @@ export async function findEligibleHospitals(latitude, longitude, maxRadiusKm = 5
   return candidates.map(({ score, ...candidate }) => candidate);
 }
 
-/**
- * Helper to build an incident identifier query filter.
- */
 export function buildIncidentFilter(idOrAccidentId) {
   const isMongoId = mongoose.Types.ObjectId.isValid(idOrAccidentId) && String(new mongoose.Types.ObjectId(idOrAccidentId)) === String(idOrAccidentId);
   return isMongoId
@@ -69,9 +58,6 @@ export function buildIncidentFilter(idOrAccidentId) {
     : { $or: [{ accidentId: idOrAccidentId }, { id: idOrAccidentId }] };
 }
 
-/**
- * Atomically assigns a primary hospital to an incident, preventing concurrent or duplicate assignments.
- */
 export async function assignPrimaryHospital(incidentId, hospitalUser, { socketServer } = {}) {
   const isMongoId = mongoose.Types.ObjectId.isValid(incidentId) && String(new mongoose.Types.ObjectId(incidentId)) === String(incidentId);
   const baseFilter = isMongoId
@@ -85,7 +71,6 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
     throw error;
   }
 
-  // First verify incident exists
   const existing = await Incident.findOne(baseFilter);
   if (!existing) {
     const error = new Error('Incident not found.');
@@ -93,7 +78,7 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
     throw error;
   }
 
-  // Idempotency: If this same hospital is already assigned, return successfully
+
   if (
     existing.dispatch?.assignedHospitalId &&
     String(existing.dispatch.assignedHospitalId) === String(hospitalId)
@@ -101,7 +86,6 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
     return existing;
   }
 
-  // Check if another hospital was already assigned
   if (existing.dispatch?.assignedHospitalId) {
     const error = new Error(
       `Incident was already assigned to primary facility: ${existing.dispatch.assignedHospitalName || 'another hospital'}.`
@@ -135,8 +119,6 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
       etaMinutes,
     },
   };
-
-  // ATOMIC CONDITIONAL UPDATE using $and to properly scope the id filter and assignment check:
   const atomicFilter = {
     $and: [
       baseFilter,
@@ -172,7 +154,6 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
   const updated = await Incident.findOneAndUpdate(atomicFilter, updateDoc, { returnDocument: 'after' });
 
   if (!updated) {
-    // If update returned null, another hospital won the race condition in this exact moment
     const fresh = await Incident.findOne(baseFilter);
     const error = new Error(
       `Incident was already assigned to primary facility: ${fresh?.dispatch?.assignedHospitalName || 'another hospital'}.`
@@ -181,16 +162,22 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
     throw error;
   }
 
-  // Update candidate status inside the candidates array
-  await Incident.updateOne(
-    { _id: updated._id, 'dispatch.candidates.hospitalId': hospitalId },
-    {
-      $set: {
-        'dispatch.candidates.$.status': 'ACCEPTED',
-        'dispatch.candidates.$.respondedAt': new Date(),
-      },
-    }
+  const candidateMatch = (updated.dispatch?.candidates || []).find(
+    (c) => (hospitalId && c.hospitalId && String(c.hospitalId) === String(hospitalId)) || (hospitalName && c.hospitalName === hospitalName)
   );
+  if (candidateMatch) {
+    if (candidateMatch.hospitalId) {
+      await Incident.updateOne(
+        { _id: updated._id, 'dispatch.candidates.hospitalId': candidateMatch.hospitalId },
+        { $set: { 'dispatch.candidates.$.status': 'ACCEPTED', 'dispatch.candidates.$.respondedAt': new Date() } }
+      );
+    } else if (candidateMatch.hospitalName) {
+      await Incident.updateOne(
+        { _id: updated._id, 'dispatch.candidates.hospitalName': candidateMatch.hospitalName },
+        { $set: { 'dispatch.candidates.$.status': 'ACCEPTED', 'dispatch.candidates.$.respondedAt': new Date() } }
+      );
+    }
+  }
 
   const finalIncident = await Incident.findById(updated._id).lean();
 
@@ -208,10 +195,11 @@ export async function assignPrimaryHospital(incidentId, hospitalUser, { socketSe
   return finalIncident;
 }
 
-/**
- * Rejects an assignment or declines an alert and triggers automatic escalation to backup hospital.
- */
-export async function rejectHospitalAssignment(incidentId, hospitalUser, { reason = 'Capacity limit / Unit diverted', socketServer } = {}) {
+export async function rejectHospitalAssignment(
+  incidentId,
+  hospitalUser,
+  { reason = 'Capacity limit / Unit diverted', isUnavailable = false, socketServer } = {}
+) {
   const filter = buildIncidentFilter(incidentId);
   const incident = await Incident.findOne(filter);
 
@@ -222,27 +210,48 @@ export async function rejectHospitalAssignment(incidentId, hospitalUser, { reaso
   }
 
   const hospitalId = hospitalUser._id || hospitalUser.id || hospitalUser.sub;
-  const hospitalName = hospitalUser.details?.hospitalName || hospitalUser.name;
-  const wasAssigned = String(incident.dispatch?.assignedHospitalId) === String(hospitalId);
-
-  // Mark candidate status
-  const candidateIndex = (incident.dispatch?.candidates || []).findIndex(
-    (c) => String(c.hospitalId) === String(hospitalId)
+  const hospitalName = hospitalUser.details?.hospitalName || hospitalUser.name || 'Hospital Facility';
+  const wasAssigned = Boolean(
+    (incident.dispatch?.assignedHospitalId && String(incident.dispatch.assignedHospitalId) === String(hospitalId)) ||
+    (hospitalName && (incident.dispatch?.assignedHospitalName || '').trim().toLowerCase() === String(hospitalName).trim().toLowerCase())
   );
 
+  const candidateIndex = (incident.dispatch?.candidates || []).findIndex((c) =>
+    (hospitalId && c.hospitalId && String(c.hospitalId) === String(hospitalId)) ||
+    (hospitalName && (c.hospitalName || '').trim().toLowerCase() === String(hospitalName).trim().toLowerCase())
+  );
+
+  const targetStatus = isUnavailable ? 'UNAVAILABLE' : 'REJECTED';
   if (candidateIndex !== -1) {
-    incident.dispatch.candidates[candidateIndex].status = 'REJECTED';
+    incident.dispatch.candidates[candidateIndex].status = targetStatus;
     incident.dispatch.candidates[candidateIndex].respondedAt = new Date();
     incident.dispatch.candidates[candidateIndex].rejectionReason = reason;
+  } else {
+    incident.dispatch.candidates.push({
+      hospitalId: mongoose.isValidObjectId(hospitalId) ? hospitalId : null,
+      hospitalName,
+      distanceKm: 0,
+      travelTimeMinutes: 2,
+      capacity: 0,
+      status: targetStatus,
+      notifiedAt: new Date(),
+      respondedAt: new Date(),
+      rejectionReason: reason,
+    });
   }
 
+  const rawActorId = hospitalId;
+  const actorId = (rawActorId && mongoose.isValidObjectId(rawActorId)) ? rawActorId : null;
+
   const timelineEntry = {
-    event: wasAssigned ? 'ASSIGNMENT_RELINQUISHED' : 'ALERT_DECLINED',
-    actorId: hospitalId,
+    event: wasAssigned
+      ? (isUnavailable ? 'ASSIGNMENT_RELINQUISHED_UNAVAILABLE' : 'ASSIGNMENT_RELINQUISHED')
+      : (isUnavailable ? 'AMBULANCE_UNAVAILABLE_REPORTED' : 'ALERT_DECLINED'),
+    actorId,
     actorName: hospitalName,
     actorRole: hospitalUser.role || 'hospital',
     timestamp: new Date(),
-    details: { reason, wasAssigned },
+    details: { reason, wasAssigned, isUnavailable },
   };
   incident.dispatch.timeline.push(timelineEntry);
 
@@ -252,14 +261,14 @@ export async function rejectHospitalAssignment(incidentId, hospitalUser, { reaso
     incident.dispatch.ambulanceId = '';
     incident.dispatch.ambulanceStatus = 'NONE';
     incident.dispatch.status = 'ALERTED';
-    incident.dispatch.hospitalResponse = 'REJECTED';
+    incident.dispatch.hospitalResponse = targetStatus;
     incident.dispatch.rejectionReason = reason;
   }
 
-  // Backup Hospital Escalation:
-  // Find next eligible candidate who hasn't rejected or marked unavailable
-  const backupCandidate = (incident.dispatch?.candidates || []).find(
-    (c) => String(c.hospitalId) !== String(hospitalId) && c.status === 'NOTIFIED'
+  const backupCandidate = (incident.dispatch?.candidates || []).find((c) =>
+    String(c.hospitalId) !== String(hospitalId) &&
+    (c.hospitalName || '').trim().toLowerCase() !== String(hospitalName).trim().toLowerCase() &&
+    c.status === 'NOTIFIED'
   );
 
   if (backupCandidate) {
@@ -280,7 +289,6 @@ export async function rejectHospitalAssignment(incidentId, hospitalUser, { reaso
     incident.dispatch.timeline.push(escalationEntry);
     incident.hospStatus = `Escalated to Backup Facility: ${backupCandidate.hospitalName}`;
   } else {
-    // No more candidates available in queue
     incident.dispatch.status = 'UNAVAILABLE';
     incident.dispatch.hospitalResponse = 'UNAVAILABLE';
     incident.hospStatus = 'All Nearby Facilities Unavailable (Manual Dispatch Required)';
@@ -313,17 +321,21 @@ export async function rejectHospitalAssignment(incidentId, hospitalUser, { reaso
   return result;
 }
 
-/**
- * Reports ambulance unavailability and triggers automatic escalation to backup hospital.
- */
-export async function reportAmbulanceUnavailable(incidentId, hospitalUser, { reason = 'No ambulances currently available', socketServer } = {}) {
-  return rejectHospitalAssignment(incidentId, hospitalUser, { reason, socketServer });
+
+export async function reportAmbulanceUnavailable(
+  incidentId,
+  hospitalUser,
+  { reason = 'No ambulances currently available', socketServer } = {}
+) {
+  return rejectHospitalAssignment(incidentId, hospitalUser, { reason, isUnavailable: true, socketServer });
 }
 
-/**
- * Updates ambulance status (DISPATCHED, EN_ROUTE, ARRIVED, UNAVAILABLE, RESOLVED).
- */
-export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, status, etaMinutes, socketServer } = {}) {
+
+export async function updateAmbulanceStatus(
+  incidentId,
+  user,
+  { ambulanceId, status, etaMinutes, driverName, driverPhone, driverCapability, socketServer } = {}
+) {
   const filter = buildIncidentFilter(incidentId);
   const incident = await Incident.findOne(filter);
 
@@ -337,7 +349,6 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
   const userName = (user.details?.hospitalName || user.name || '').trim().toLowerCase();
   const assignedName = (incident.dispatch?.assignedHospitalName || '').trim().toLowerCase();
 
-  // RBAC: Hospital staff can update only their authorized assigned incidents; admin has full rights
   if (user.role === 'hospital') {
     const isOwner = (
       (incident.dispatch?.assignedHospitalId && String(incident.dispatch.assignedHospitalId) === String(userId)) ||
@@ -350,7 +361,7 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
     }
   }
 
-  const validStatuses = ['IDLE', 'DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'UNAVAILABLE', 'RESOLVED'];
+  const validStatuses = ['IDLE', 'DISPATCHED', 'EN_ROUTE', 'ARRIVED', 'TRANSPORT', 'UNAVAILABLE', 'RESOLVED'];
   const normalizedStatus = String(status || '').trim().toUpperCase();
 
   if (!validStatuses.includes(normalizedStatus)) {
@@ -372,11 +383,19 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
     });
   }
 
-  const actorName = user.details?.hospitalName || user.name || 'Hospital Staff';
-  const effectiveAmbId = ambulanceId ? String(ambulanceId).trim() : incident.dispatch.ambulanceId;
+  const actorName = user.details?.hospitalName || user.name || (user.role === 'ambulance' ? (user.details?.driverName || user.name) : 'Hospital Staff');
+  const effectiveAmbId = ambulanceId ? String(ambulanceId).trim() : (incident.dispatch.ambulanceId || (user.role === 'ambulance' ? (user.details?.ambulanceUnitId || 'AMB-108') : ''));
 
   incident.dispatch.ambulanceStatus = normalizedStatus;
   incident.dispatch.ambulanceId = effectiveAmbId;
+
+  const effDriverName = driverName || (user.role === 'ambulance' ? (user.details?.driverName || user.name) : '') || incident.dispatch.driverName;
+  const effDriverPhone = driverPhone || (user.role === 'ambulance' ? (user.details?.contactPhone || user.details?.emergencyPhone || user.phone) : '') || incident.dispatch.driverPhone;
+  const effCapability = driverCapability || (user.role === 'ambulance' ? (user.details?.capability || 'ALS') : '') || incident.dispatch.driverCapability;
+
+  if (effDriverName) incident.dispatch.driverName = effDriverName;
+  if (effDriverPhone) incident.dispatch.driverPhone = effDriverPhone;
+  if (effCapability) incident.dispatch.driverCapability = effCapability;
 
   if (normalizedStatus === 'DISPATCHED') {
     incident.dispatch.dispatchedAt = new Date();
@@ -389,6 +408,9 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
     incident.dispatch.arrivedAt = new Date();
     incident.dispatch.status = 'ARRIVED';
     incident.hospStatus = `Ambulance ${effectiveAmbId} Arrived on Scene`;
+  } else if (normalizedStatus === 'TRANSPORT') {
+    incident.dispatch.status = 'TRANSPORT';
+    incident.hospStatus = `Ambulance ${effectiveAmbId} Transporting Patient to Hospital`;
   } else if (normalizedStatus === 'RESOLVED') {
     incident.dispatch.status = 'RESOLVED';
     incident.hospStatus = `Medical Response Resolved by ${actorName}`;
@@ -415,6 +437,95 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
       ambulanceId: effectiveAmbId,
       status: normalizedStatus,
       etaMinutes: incident.dispatch.etaMinutes,
+      driverName: incident.dispatch.driverName,
+      driverPhone: incident.dispatch.driverPhone,
+      driverCapability: incident.dispatch.driverCapability,
+    },
+  });
+
+  await incident.save();
+  const result = incident.toObject();
+
+  if (socketServer) {
+    socketServer.to(['role:admin', 'role:police', 'role:hospital', 'role:ambulance']).emit('incident:updated', result);
+    socketServer.to(['role:admin', 'role:police', 'role:hospital', 'role:ambulance']).emit('dispatch:ambulance_status', {
+      incidentId: result.accidentId,
+      ambulanceId: effectiveAmbId,
+      status: normalizedStatus,
+      etaMinutes: result.dispatch.etaMinutes,
+      driverName: incident.dispatch.driverName,
+      driverPhone: incident.dispatch.driverPhone,
+      driverCapability: incident.dispatch.driverCapability,
+      assignedHospitalId: incident.dispatch.assignedHospitalId,
+      assignedHospitalName: incident.dispatch.assignedHospitalName,
+      hospitalName: actorName,
+      timestamp: new Date(),
+    });
+  }
+
+  return result;
+}
+
+
+export async function submitDriverReport(incidentId, user, {
+  injuredCount,
+  injurySeverity,
+  ambulanceTypeRequired,
+  extraAmbulancesNeeded,
+  triageNotes,
+  driverName,
+  driverPhone,
+  socketServer,
+} = {}) {
+  const filter = buildIncidentFilter(incidentId);
+  const incident = await Incident.findOne(filter);
+
+  if (!incident) {
+    const error = new Error('Incident not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  const actorName = driverName || user?.name || 'Ambulance Driver';
+  const count = Math.max(1, Number(injuredCount) || 1);
+  const sev = String(injurySeverity || 'CRITICAL').toUpperCase();
+  const ambType = String(ambulanceTypeRequired || 'BLS').toUpperCase();
+  const extra = Math.max(0, Number(extraAmbulancesNeeded) || 0);
+  const notes = String(triageNotes || '').trim();
+
+  incident.driverReport = {
+    injuredCount: count,
+    injurySeverity: sev,
+    ambulanceTypeRequired: ambType,
+    extraAmbulancesNeeded: extra,
+    triageNotes: notes,
+    reportedAt: new Date(),
+    driverName: actorName,
+    driverPhone: driverPhone || '',
+  };
+
+  if (sev === 'CRITICAL' || sev === 'SEVERE') {
+    incident.severity = sev;
+  }
+
+  const extraMsg = extra > 0 ? ` (+${extra} Extra Units Requested)` : '';
+  incident.hospStatus = `Driver Triage: ${count} Injured (${sev}) - ${ambType} Needed${extraMsg}`;
+
+  const rawActorId = user?._id || user?.id || user?.sub || null;
+  const actorId = (rawActorId && mongoose.isValidObjectId(rawActorId)) ? rawActorId : null;
+
+  incident.dispatch.timeline.push({
+    event: 'DRIVER_ON_SCENE_TRIAGE',
+    actorId,
+    actorName,
+    actorRole: user?.role || 'ambulance',
+    timestamp: new Date(),
+    details: {
+      injuredCount: count,
+      injurySeverity: sev,
+      ambulanceTypeRequired: ambType,
+      extraAmbulancesNeeded: extra,
+      triageNotes: notes,
     },
   });
 
@@ -423,15 +534,275 @@ export async function updateAmbulanceStatus(incidentId, user, { ambulanceId, sta
 
   if (socketServer) {
     socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('incident:updated', result);
-    socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('dispatch:ambulance_status', {
+    socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('dispatch:driver_triage', {
       incidentId: result.accidentId,
-      ambulanceId: effectiveAmbId,
-      status: normalizedStatus,
-      etaMinutes: result.dispatch.etaMinutes,
-      hospitalName: actorName,
+      injuredCount: count,
+      injurySeverity: sev,
+      ambulanceTypeRequired: ambType,
+      extraAmbulancesNeeded: extra,
+      triageNotes: notes,
+      driverName: actorName,
       timestamp: new Date(),
     });
   }
 
   return result;
 }
+
+export async function getAccidentRecommendedHospitals(incidentId, { maxRadiusKm = 100 } = {}) {
+  const filter = buildIncidentFilter(incidentId);
+  const incident = await Incident.findOne(filter).lean();
+  if (!incident) {
+    const error = new Error('Incident not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  const rawLat = incident.latitude;
+  const rawLng = incident.longitude;
+
+  if (
+    rawLat == null ||
+    rawLng == null ||
+    rawLat === '' ||
+    rawLng === '' ||
+    typeof rawLat === 'boolean' ||
+    typeof rawLng === 'boolean' ||
+    !Number.isFinite(Number(rawLat)) ||
+    !Number.isFinite(Number(rawLng)) ||
+    Number(rawLat) < -90 ||
+    Number(rawLat) > 90 ||
+    Number(rawLng) < -180 ||
+    Number(rawLng) > 180
+  ) {
+    return {
+      status: 'MISSING_COORDINATES',
+      message: 'Accident location unavailable. Hospital assignment requires verified accident coordinates.',
+      accidentCoordinates: null,
+      accidentLocation: incident.location || 'Unavailable',
+      accidentTimestamp: incident.timestamp,
+      candidates: [],
+      recommended: null,
+      assignedHospitalId: incident.dispatch?.assignedHospitalId || null,
+      assignedHospitalName: incident.dispatch?.assignedHospitalName || null,
+      dispatchStatus: incident.dispatch?.status || 'UNASSIGNED',
+    };
+  }
+
+  const accidentLat = Number(rawLat);
+  const accidentLng = Number(rawLng);
+
+  const hospitals = await User.find({
+    role: 'hospital',
+  }).select('_id name email details').lean();
+
+  const eligibleCandidates = [];
+  for (const hosp of hospitals) {
+    const hospLat = Number(hosp.details?.latitude);
+    const hospLng = Number(hosp.details?.longitude);
+
+    if (!Number.isFinite(hospLat) || !Number.isFinite(hospLng) || hospLat < -90 || hospLat > 90 || hospLng < -180 || hospLng > 180) {
+      continue;
+    }
+
+    const dist = distanceKm(accidentLat, accidentLng, hospLat, hospLng);
+    if (dist > maxRadiusKm) continue;
+
+    const hospName = hosp.details?.hospitalName || hosp.name || 'Emergency Trauma Facility';
+    const phone = hosp.details?.emergencyPhone || hosp.details?.contactPhone || 'Contact not on file';
+    const address = hosp.details?.address || `${hospLat.toFixed(5)}°, ${hospLng.toFixed(5)}°`;
+
+    const availability = 'UNKNOWN';
+    const availabilityText = 'Availability unknown';
+
+    const isCurrentAssigned = Boolean(
+      incident.dispatch?.assignedHospitalId &&
+      String(incident.dispatch.assignedHospitalId) === String(hosp._id)
+    );
+
+    eligibleCandidates.push({
+      hospitalId: hosp._id,
+      hospitalName: hospName,
+      latitude: hospLat,
+      longitude: hospLng,
+      distanceKm: Math.round(dist * 100) / 100,
+      distanceType: 'straight-line',
+      distanceLabel: `${(Math.round(dist * 100) / 100).toFixed(2)} km straight-line`,
+      phone,
+      email: hosp.email || '',
+      address,
+      regNo: hosp.details?.hospitalRegNo || '',
+      eligibility: 'Eligible (Registered Trauma Center)',
+      availability,
+      availabilityText,
+      isCurrentAssigned,
+    });
+  }
+
+  eligibleCandidates.sort((a, b) => a.distanceKm - b.distanceKm);
+
+  if (eligibleCandidates.length === 0) {
+    return {
+      status: 'NO_ELIGIBLE_HOSPITALS',
+      message: 'No eligible hospital found. Manual dispatch review required.',
+      accidentCoordinates: { latitude: accidentLat, longitude: accidentLng },
+      accidentLocation: incident.location || `${accidentLat.toFixed(5)}, ${accidentLng.toFixed(5)}`,
+      accidentTimestamp: incident.timestamp,
+      candidates: [],
+      recommended: null,
+      assignedHospitalId: incident.dispatch?.assignedHospitalId || null,
+      assignedHospitalName: incident.dispatch?.assignedHospitalName || null,
+      dispatchStatus: incident.dispatch?.status || 'UNASSIGNED',
+    };
+  }
+
+  const recommended = {
+    ...eligibleCandidates[0],
+    isRecommended: true,
+    recommendationReason: `Nearest eligible hospital to accident coordinates (${eligibleCandidates[0].distanceLabel})`,
+  };
+
+  return {
+    status: 'SUCCESS',
+    accidentCoordinates: { latitude: accidentLat, longitude: accidentLng },
+    accidentLocation: incident.location || `${accidentLat.toFixed(5)}, ${accidentLng.toFixed(5)}`,
+    accidentTimestamp: incident.timestamp,
+    assignedHospitalId: incident.dispatch?.assignedHospitalId || null,
+    assignedHospitalName: incident.dispatch?.assignedHospitalName || null,
+    dispatchStatus: incident.dispatch?.status || 'UNASSIGNED',
+    recommended,
+    candidates: eligibleCandidates,
+  };
+}
+
+export async function assignDestinationHospital(incidentId, user, { hospitalId, reason, socketServer } = {}) {
+  const filter = buildIncidentFilter(incidentId);
+  const incident = await Incident.findOne(filter);
+  if (!incident) {
+    const error = new Error('Incident not found.');
+    error.status = 404;
+    throw error;
+  }
+
+  if (!hospitalId) {
+    const error = new Error('Destination hospital ID is required.');
+    error.status = 400;
+    throw error;
+  }
+
+  const hospitalUser = await User.findById(hospitalId).lean();
+  if (!hospitalUser || hospitalUser.role !== 'hospital') {
+    const error = new Error('Selected hospital is not a registered hospital in AERIS.');
+    error.status = 400;
+    throw error;
+  }
+
+  const hospLat = Number(hospitalUser.details?.latitude);
+  const hospLng = Number(hospitalUser.details?.longitude);
+  if (!Number.isFinite(hospLat) || !Number.isFinite(hospLng)) {
+    const error = new Error('Selected hospital does not have valid verified GPS coordinates.');
+    error.status = 400;
+    throw error;
+  }
+
+  const rawAccLat = incident.latitude;
+  const rawAccLng = incident.longitude;
+  if (
+    rawAccLat == null ||
+    rawAccLng == null ||
+    rawAccLat === '' ||
+    rawAccLng === '' ||
+    typeof rawAccLat === 'boolean' ||
+    typeof rawAccLng === 'boolean' ||
+    !Number.isFinite(Number(rawAccLat)) ||
+    !Number.isFinite(Number(rawAccLng))
+  ) {
+    const error = new Error('Accident location unavailable. Hospital assignment requires verified accident coordinates.');
+    error.status = 400;
+    throw error;
+  }
+
+  const accidentLat = Number(rawAccLat);
+  const accidentLng = Number(rawAccLng);
+
+  const dist = distanceKm(accidentLat, accidentLng, hospLat, hospLng);
+  const distKm = Math.round(dist * 100) / 100;
+  const hospitalName = hospitalUser.details?.hospitalName || hospitalUser.name || 'Trauma Facility';
+
+  const currentAssignedId = incident.dispatch?.assignedHospitalId ? String(incident.dispatch.assignedHospitalId) : null;
+  const isSameHospital = currentAssignedId && currentAssignedId === String(hospitalId);
+
+  if (isSameHospital && incident.dispatch?.status === 'ASSIGNED') {
+    return incident.toObject();
+  }
+
+  const isReassignment = Boolean(currentAssignedId && currentAssignedId !== String(hospitalId));
+  const previousHospitalName = incident.dispatch?.assignedHospitalName || 'None';
+  const effectiveReason = reason || (isReassignment ? 'Destination reassigned by ambulance operator' : 'Accident location nearest facility confirmed');
+
+  const rawActorId = user?._id || user?.id || user?.sub || null;
+  const actorId = (rawActorId && mongoose.isValidObjectId(rawActorId)) ? rawActorId : null;
+  const actorName = user?.name || 'Ambulance Operator';
+  const actorRole = user?.role || 'ambulance';
+
+  const timelineEntry = {
+    event: isReassignment ? 'DESTINATION_REASSIGNED' : 'DESTINATION_CONFIRMED',
+    actorId,
+    actorName,
+    actorRole,
+    timestamp: new Date(),
+    details: {
+      destinationHospital: hospitalName,
+      previousHospital: isReassignment ? previousHospitalName : null,
+      straightLineDistanceKm: distKm,
+      reason: effectiveReason,
+      selectionBasis: 'Accident coordinates proximity',
+    },
+  };
+
+  incident.dispatch.assignedHospitalId = hospitalId;
+  incident.dispatch.assignedHospitalName = hospitalName;
+  incident.dispatch.assignedAt = new Date();
+  incident.dispatch.status = 'ASSIGNED';
+  incident.dispatch.hospitalResponse = 'ACCEPTED';
+
+  if (user?.role === 'ambulance') {
+    if (!incident.dispatch.ambulanceId) {
+      incident.dispatch.ambulanceId = user.details?.ambulanceUnitId || 'AMB-108';
+    }
+    incident.dispatch.driverName = user.details?.driverName || user.name || incident.dispatch.driverName || 'Ambulance Lead EMT';
+    incident.dispatch.driverPhone = user.details?.contactPhone || user.details?.emergencyPhone || user.phone || incident.dispatch.driverPhone || '+919840122108';
+    incident.dispatch.driverCapability = user.details?.capability || incident.dispatch.driverCapability || 'ALS';
+  }
+
+  incident.hospStatus = `Destination Confirmed: ${hospitalName} (${distKm} km straight-line from scene)`;
+  if (incident.status === 'Emergency') {
+    incident.status = 'Response Started';
+  }
+  incident.hospitalResponse = {
+    status: 'Response Started',
+    organization: hospitalName,
+    unit: incident.dispatch.ambulanceId || '',
+    acknowledgedAt: new Date(),
+  };
+
+  incident.dispatch.timeline.push(timelineEntry);
+
+  await incident.save();
+  const result = incident.toObject();
+
+  if (socketServer) {
+    socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('incident:updated', result);
+    socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('dispatch:assigned', {
+      incidentId: result.accidentId,
+      hospitalId,
+      hospitalName,
+      straightLineDistanceKm: distKm,
+      reason: effectiveReason,
+      timestamp: new Date(),
+    });
+  }
+
+  return result;
+}
+

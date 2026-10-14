@@ -28,7 +28,7 @@ if exist "ai_service\app.py" (
 
 start "AERIS Backend [5000]" cmd /k "title AERIS Backend [5000] && cd backend && npm run dev"
 
-timeout /t 1 /nobreak >nul
+timeout /t 3 /nobreak >nul
 
 start "AERIS Frontend [5173]" cmd /k "title AERIS Frontend [5173] && cd frontend && npm run dev"
 

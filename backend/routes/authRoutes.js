@@ -5,7 +5,7 @@ import User, { getModelByRole } from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
-const roles = new Set(['admin', 'police', 'hospital']);
+const roles = new Set(['admin', 'police', 'hospital', 'ambulance']);
 
 function userResponse(user) {
   const userId = (user._id || user.id || user.sub || '').toString();
@@ -25,8 +25,19 @@ function parseCoordinate(value, minimum, maximum) {
     : null;
 }
 
+function normalizePhone(value) {
+  if (typeof value !== 'string') return null;
+  let cleaned = value.trim().replace(/[\s\-()]/g, '');
+  if (/^[1-9]\d{9}$/.test(cleaned)) {
+    cleaned = '+91' + cleaned;
+  } else if (/^\d{11,14}$/.test(cleaned)) {
+    cleaned = '+' + cleaned;
+  }
+  return /^\+[1-9]\d{7,14}$/.test(cleaned) ? cleaned : null;
+}
+
 function isE164Phone(value) {
-  return typeof value === 'string' && /^\+[1-9]\d{7,14}$/.test(value);
+  return normalizePhone(value) !== null;
 }
 
 router.post('/register', async (req, res, next) => {
@@ -74,6 +85,11 @@ router.post('/register', async (req, res, next) => {
     if (role === 'police' && !['stationName', 'badgeId'].every((key) => details[key])) {
       return res.status(400).json({ message: 'Station name and badge ID are required.' });
     }
+    if (role === 'ambulance') {
+      details.ambulanceUnitId = details.ambulanceUnitId || details.unitId || 'AMB-108';
+      details.driverName = details.driverName || name.trim();
+      details.capability = details.capability || 'ALS';
+    }
     const normalizedEmail = email.trim().toLowerCase();
     if (await User.exists({ email: normalizedEmail })) {
       return res.status(409).json({ message: 'An account with this email already exists.' });
@@ -84,7 +100,6 @@ router.post('/register', async (req, res, next) => {
       safeDetails.longitude = details.longitude;
     }
 
-    // Role-specific collection insertion
     const Model = getModelByRole(role);
     if (!Model) {
       return res.status(400).json({ message: 'Invalid role.' });
@@ -112,7 +127,6 @@ router.post('/login', async (req, res, next) => {
     const normalizedEmail = email.trim().toLowerCase();
     let user = null;
 
-    // 1. Try requested role collection first
     if (role && roles.has(role)) {
       const Model = getModelByRole(role);
       if (Model) {
@@ -120,9 +134,8 @@ router.post('/login', async (req, res, next) => {
       }
     }
 
-    // 2. If not found in requested role, search across all role collections (police, hospital, admin)
     if (!user) {
-      for (const r of ['police', 'hospital', 'admin']) {
+      for (const r of ['ambulance', 'police', 'hospital', 'admin']) {
         const M = getModelByRole(r);
         if (M) {
           const candidate = await M.findOne({ email: normalizedEmail });
@@ -134,7 +147,6 @@ router.post('/login', async (req, res, next) => {
       }
     }
 
-    // 3. Fallback search on base User model
     if (!user) {
       user = await User.findOne({ email: normalizedEmail });
     }
@@ -162,28 +174,27 @@ router.get('/me', authenticate, async (req, res, next) => {
 
 router.patch('/facility', authenticate, async (req, res, next) => {
   try {
-    if (req.user.role === 'admin') {
-      return res.status(400).json({ message: 'Facility settings apply to hospital and police accounts only.' });
-    }
     const Model = getModelByRole(req.user.role);
     const userId = req.user._id || req.user.id || req.user.sub;
     const user = Model ? await Model.findById(userId) : await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'Account not found.' });
-    const { latitude, longitude, phone, alertConsent } = req.body || {};
+    const { latitude, longitude, phone, contactPhone, emergencyPhone, alertConsent } = req.body || {};
     const parsedLat = parseCoordinate(latitude, -90, 90);
     const parsedLng = parseCoordinate(longitude, -180, 180);
     if (parsedLat === null || parsedLng === null) {
       return res.status(400).json({ message: 'Valid facility latitude and longitude are required.' });
     }
-    if (!isE164Phone(phone)) {
-      return res.status(400).json({ message: 'Enter a valid E.164 phone number, for example +15551234567.' });
+    const rawPhone = phone || contactPhone || emergencyPhone;
+    const normalizedPhone = normalizePhone(rawPhone);
+    if (!normalizedPhone) {
+      return res.status(400).json({ message: 'Enter a valid phone number, e.g. +91 98765 43210 or 10-digit mobile.' });
     }
     user.details = {
       ...(user.details || {}),
       latitude: parsedLat,
       longitude: parsedLng,
       alertConsent: alertConsent === true,
-      ...(user.role === 'hospital' ? { emergencyPhone: phone } : { contactPhone: phone }),
+      ...(user.role === 'hospital' ? { emergencyPhone: normalizedPhone } : { contactPhone: normalizedPhone }),
     };
     await user.save();
     return res.json({ user: userResponse(user) });

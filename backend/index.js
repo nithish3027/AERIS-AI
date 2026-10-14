@@ -13,7 +13,6 @@ import incidentRoutes from './routes/incidentRoutes.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env from backend directory first, then fallback to root
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -32,10 +31,8 @@ const io = new SocketServer(server, {
 app.set('io', io);
 app.use(cors({ origin: '*' }));
 
-// Serve uploads directory
 app.use('/uploads', express.static(path.resolve(__dirname, 'uploads')));
 
-// Serve frontend dist if built, or frontend source directory
 const frontendDist = path.resolve(__dirname, '..', 'frontend', 'dist');
 const frontendDir = path.resolve(__dirname, '..', 'frontend');
 app.use(express.static(frontendDist));
@@ -71,20 +68,29 @@ io.on('connection', (socket) => {
   socket.join(`role:${socket.data.user.role}`);
 });
 
-await mongoose.connect(mongoUri);
+try {
+  console.log('[AERIS Backend] Connecting to MongoDB...');
+  await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 8000 });
+  console.log('[AERIS Backend] MongoDB connected successfully.');
+} catch (mongoErr) {
+  console.error(`[AERIS Backend FATAL] MongoDB connection failed: ${mongoErr.message}`);
+  console.error('[AERIS Backend FATAL] Please ensure local MongoDB service is running (mongod or Windows Service).');
+  process.exit(1);
+}
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`[AERIS] Port ${port} is already in use.`);
-    console.error(`[AERIS] Run: npm run kill:ports  — then retry.`);
+    console.error(`[AERIS Backend] Port ${port} is already in use by another process.`);
+    console.error(`[AERIS Backend] Run: npm run kill:ports  — then restart.`);
   } else {
-    console.error('[AERIS] Server error:', err);
+    console.error('[AERIS Backend] Server error:', err);
   }
   process.exit(1);
 });
 
 server.listen(port, '0.0.0.0', () => {
-  console.log(`AERIS API listening on http://localhost:${port}`);
+  console.log(`[AERIS Backend] API listening on http://127.0.0.1:${port}`);
+  console.log(`[AERIS Backend] Ready for Vite proxy requests and Socket.IO connections.`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {

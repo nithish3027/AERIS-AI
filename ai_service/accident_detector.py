@@ -158,7 +158,7 @@ class DashcamAccidentDetector:
     ):
         self.model = model or load_model()
         self.conf_thresh = confidence_thresh
-        self.vehicle_classes = [2, 3, 5, 7]  # car, motorcycle, bus, truck
+        self.vehicle_classes = [2, 3, 5, 7]
         self.detect_v2v = detect_v2v
         self.snapshot_dir = str(snapshot_dir)
         os.makedirs(self.snapshot_dir, exist_ok=True)

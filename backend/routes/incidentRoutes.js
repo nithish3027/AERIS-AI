@@ -14,6 +14,9 @@ import {
   rejectHospitalAssignment,
   reportAmbulanceUnavailable,
   updateAmbulanceStatus,
+  submitDriverReport,
+  getAccidentRecommendedHospitals,
+  assignDestinationHospital,
   buildIncidentFilter,
 } from '../services/hospitalDispatchService.js';
 import { allowRoles, authenticate } from '../middleware/auth.js';
@@ -36,15 +39,56 @@ const upload = multer({
 
 router.use(authenticate);
 
-router.get('/', async (_req, res, next) => {
+function sanitizeIncidentForHospital(inc, user) {
+  if (!user || user.role !== 'hospital') return inc;
+  const myHospitalId = String(user._id || user.id || user.sub || '');
+  const myHospitalName = (user.details?.hospitalName || user.name || '').trim().toLowerCase();
+
+  const assignedId = inc.dispatch?.assignedHospitalId ? String(inc.dispatch.assignedHospitalId) : '';
+  const assignedName = (inc.dispatch?.assignedHospitalName || '').trim().toLowerCase();
+
+  const isMine = Boolean(
+    (assignedId && assignedId === myHospitalId) ||
+    (myHospitalName && assignedName && assignedName === myHospitalName)
+  );
+
+  if (assignedId && !isMine) {
+    const clone = { ...inc };
+    if (clone.dispatch) {
+      clone.dispatch = {
+        ...clone.dispatch,
+        ambulanceId: clone.dispatch.ambulanceStatus && clone.dispatch.ambulanceStatus !== 'NONE' ? 'CONFIDENTIAL' : '',
+        driverName: '',
+        driverPhone: '',
+        driverCapability: '',
+      };
+    }
+    if (clone.driverReport) {
+      clone.driverReport = {
+        ...clone.driverReport,
+        driverName: '',
+        driverPhone: '',
+        triageNotes: 'Confidential to receiving trauma facility',
+      };
+    }
+    return clone;
+  }
+  return inc;
+}
+
+router.get('/', async (req, res, next) => {
   try {
-    return res.json(await Incident.find().sort({ timestamp: -1 }).lean());
+    const raw = await Incident.find().sort({ timestamp: -1 }).lean();
+    if (req.user?.role === 'hospital') {
+      return res.json(raw.map((i) => sanitizeIncidentForHospital(i, req.user)));
+    }
+    return res.json(raw);
   } catch (error) {
     return next(error);
   }
 });
 
-router.post('/detect', allowRoles('admin'), upload.single('video'), async (req, res) => {
+router.post('/detect', allowRoles('admin', 'hospital', 'police', 'ambulance'), upload.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'Choose a video file to analyze.' });
   let keepVideo = false;
   const form = new FormData();
@@ -62,12 +106,11 @@ router.post('/detect', allowRoles('admin'), upload.single('video'), async (req, 
     keepVideo = response.data.accidentDetected === true;
     let finalFileName = path.basename(req.file.path);
 
-    // If collision confirmed, auto-clip the video starting 20s before the accident moment
     if (keepVideo && response.data.frame) {
       const fps = Number(response.data.fps) || 30;
       const collisionSec = response.data.collision_sec ?? (response.data.frame / fps);
       const preCrashStart = Math.max(0, collisionSec - 20);
-      const clipDuration = 28; // 20s pre-crash approach + 8s aftermath
+      const clipDuration = 28;
       const clippedFileName = `clip-${finalFileName}`;
       const clippedFilePath = path.join(uploadDirectory, clippedFileName);
 
@@ -86,7 +129,6 @@ router.post('/detect', allowRoles('admin'), upload.single('video'), async (req, 
           });
         });
 
-        // Remove full unclipped video to keep only the focused 20s pre-crash incident clip
         await fs.unlink(req.file.path).catch(() => {});
         finalFileName = clippedFileName;
       } catch (trimError) {
@@ -108,7 +150,7 @@ router.post('/detect', allowRoles('admin'), upload.single('video'), async (req, 
   }
 });
 
-router.post('/', allowRoles('admin'), async (req, res, next) => {
+router.post('/', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res, next) => {
   try {
     const body = req.body || {};
     const latitude = Number(body.latitude);
@@ -128,7 +170,6 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
       ? body.videoUrl.match(/^\/uploads\/([A-Za-z0-9._-]+)$/)
       : null;
 
-    // Discover and rank eligible nearby hospitals
     const configuredRadius = Number(process.env.ALERT_RADIUS_KM || 25);
     const candidateHospitals = await findEligibleHospitals(latitude, longitude, configuredRadius);
 
@@ -223,8 +264,6 @@ router.post('/', allowRoles('admin'), async (req, res, next) => {
   }
 });
 
-// --- DISPATCH CODES & WORKFLOW ENDPOINTS ---
-
 router.get('/:id/dispatch', async (req, res, next) => {
   try {
     const filter = buildIncidentFilter(req.params.id);
@@ -236,7 +275,31 @@ router.get('/:id/dispatch', async (req, res, next) => {
   }
 });
 
-router.post('/:id/dispatch/accept', allowRoles('admin', 'hospital'), async (req, res) => {
+router.get('/:id/recommended-hospitals', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
+  try {
+    const result = await getAccidentRecommendedHospitals(req.params.id);
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+router.post('/:id/dispatch/assign-destination', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
+  try {
+    const { hospitalId, reason } = req.body || {};
+    const io = req.app.get('io');
+    const incident = await assignDestinationHospital(req.params.id, req.user, {
+      hospitalId,
+      reason,
+      socketServer: io,
+    });
+    return res.json(incident);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+router.post('/:id/dispatch/accept', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
   try {
     const io = req.app.get('io');
     const incident = await assignPrimaryHospital(req.params.id, req.user, { socketServer: io });
@@ -246,36 +309,67 @@ router.post('/:id/dispatch/accept', allowRoles('admin', 'hospital'), async (req,
   }
 });
 
-router.post('/:id/dispatch/reject', allowRoles('admin', 'hospital'), async (req, res) => {
+router.post('/:id/dispatch/reject', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
   try {
     const { reason } = req.body || {};
     const io = req.app.get('io');
     const incident = await rejectHospitalAssignment(req.params.id, req.user, { reason, socketServer: io });
-    return res.json(incident);
+    return res.json(sanitizeIncidentForHospital(incident, req.user));
   } catch (error) {
     return res.status(error.status || 500).json({ message: error.message });
   }
 });
 
-router.post('/:id/dispatch/unavailable', allowRoles('admin', 'hospital'), async (req, res) => {
+router.post('/:id/dispatch/unavailable', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
   try {
     const { reason } = req.body || {};
     const io = req.app.get('io');
     const incident = await reportAmbulanceUnavailable(req.params.id, req.user, { reason, socketServer: io });
-    return res.json(incident);
+    return res.json(sanitizeIncidentForHospital(incident, req.user));
   } catch (error) {
     return res.status(error.status || 500).json({ message: error.message });
   }
 });
 
-router.post('/:id/dispatch/ambulance', allowRoles('admin', 'hospital'), async (req, res) => {
+router.post('/:id/dispatch/ambulance', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
   try {
-    const { ambulanceId, status, etaMinutes } = req.body || {};
+    const { ambulanceId, status, etaMinutes, driverName, driverPhone, driverCapability } = req.body || {};
     const io = req.app.get('io');
     const incident = await updateAmbulanceStatus(req.params.id, req.user, {
       ambulanceId,
       status,
       etaMinutes,
+      driverName,
+      driverPhone,
+      driverCapability,
+      socketServer: io,
+    });
+    return res.json(incident);
+  } catch (error) {
+    return res.status(error.status || 500).json({ message: error.message });
+  }
+});
+
+router.post('/:id/dispatch/driver-triage', allowRoles('admin', 'hospital', 'police', 'ambulance'), async (req, res) => {
+  try {
+    const {
+      injuredCount,
+      injurySeverity,
+      ambulanceTypeRequired,
+      extraAmbulancesNeeded,
+      triageNotes,
+      driverName,
+      driverPhone,
+    } = req.body || {};
+    const io = req.app.get('io');
+    const incident = await submitDriverReport(req.params.id, req.user, {
+      injuredCount,
+      injurySeverity,
+      ambulanceTypeRequired,
+      extraAmbulancesNeeded,
+      triageNotes,
+      driverName,
+      driverPhone,
       socketServer: io,
     });
     return res.json(incident);
@@ -306,8 +400,11 @@ router.get('/:id', async (req, res, next) => {
     const filter = isMongoId
       ? { $or: [{ _id: req.params.id }, { accidentId: req.params.id }, { id: req.params.id }] }
       : { $or: [{ accidentId: req.params.id }, { id: req.params.id }] };
-    const incident = await Incident.findOne(filter);
+    const incident = await Incident.findOne(filter).lean();
     if (!incident) return res.status(404).json({ message: 'Incident not found.' });
+    if (req.user?.role === 'hospital') {
+      return res.json(sanitizeIncidentForHospital(incident, req.user));
+    }
     return res.json(incident);
   } catch (error) {
     return next(error);

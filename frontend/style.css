@@ -1,62 +1,43 @@
-/* ==========================================================================
-   AERIS — AI-POWERED ACCIDENT EMERGENCY RESPONSE & INTELLIGENCE SYSTEM
-   Clean Professional Operations Interface (College AI & Data Science Project)
-   Readability-Optimized Typography & Spacing System
-   ========================================================================== */
-
 :root {
-  /* 1. Core Color Palette */
-  --bg-main: #E8ECF1;              /* Soft Grey Canvas Background */
-  --bg-card: #FFFFFF;              /* Clean White Content Card */
-  --bg-card-subtle: #F5F6F8;       /* Subtle Light Grey Card */
-  --bg-sidebar: #344256;           /* Medium Slate Sidebar */
-  --bg-sidebar-hover: #3E4E65;     /* Sidebar Hover State */
-  --bg-sidebar-active: #273344;    /* Sidebar Active Tab */
-  --bg-topbar: #FFFFFF;            /* Clean White Header */
-  --bg-input: #FFFFFF;             /* Form Input Background */
+  --bg-main: #E8ECF1;
+  --bg-card: #FFFFFF;
+  --bg-card-subtle: #F5F6F8;
+  --bg-sidebar: #344256;
+  --bg-sidebar-hover: #3E4E65;
+  --bg-sidebar-active: #273344;
+  --bg-topbar: #FFFFFF;
+  --bg-input: #FFFFFF;
+  --text-primary: #293548;
+  --text-secondary: #64748B;
+  --text-muted: #8E9BAE;
+  --text-inverse: #FFFFFF;
+  --border-color: #D8DEE7;
+  --border-subtle: #E8EDF3;
+  --color-primary: #3974CE;
+  --color-primary-hover: #2B5EAA;
+  --color-primary-light: #EBF2FC;
 
-  /* 2. Typography Colors */
-  --text-primary: #293548;         /* Dark Grey Primary Text */
-  --text-secondary: #64748B;       /* Medium Slate Secondary Text */
-  --text-muted: #8E9BAE;           /* Muted Help/Timestamp Text */
-  --text-inverse: #FFFFFF;         /* White Text for Dark Elements */
-
-  /* 3. Borders & Dividers */
-  --border-color: #D8DEE7;         /* Standard Clean Border */
-  --border-subtle: #E8EDF3;        /* Subtle Internal Divider */
-
-  /* 4. Semantic Status & Action Colors */
-  --color-primary: #3974CE;        /* Primary Interaction Blue */
-  --color-primary-hover: #2B5EAA;  /* Primary Button Hover */
-  --color-primary-light: #EBF2FC;  /* Light Blue Selected Row / Tab */
-
-  --color-emergency: #D9534F;      /* Emergency Red */
+  --color-emergency: #D9534F;
   --color-emergency-hover: #C2423E;
-  --color-emergency-light: #FDF2F2;/* Soft Red Alert Box */
+  --color-emergency-light: #FDF2F2;
 
-  --color-pending: #D99A25;        /* Pending Action Amber */
-  --color-pending-light: #FEF8EC;  /* Soft Amber Pill */
+  --color-pending: #D99A25;
+  --color-pending-light: #FEF8EC;
 
-  --color-success: #278653;        /* Success Green */
-  --color-success-light: #EDF7F1;  /* Soft Green Pill */
+  --color-success: #278653;
+  --color-success-light: #EDF7F1;
 
-  --color-info: #3974CE;           /* Information Blue */
+  --color-info: #3974CE;
   --color-info-light: #EBF2FC;
-
-  /* 5. Geometry & Shadows (Restrained, Flat, Clean) */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --shadow-sm: 0 1px 3px rgba(41, 53, 72, 0.06);
   --shadow-md: 0 2px 6px rgba(41, 53, 72, 0.08);
   --shadow-lg: 0 8px 24px rgba(41, 53, 72, 0.12);
-
-  /* 6. Typography Scale */
   --font-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', Consolas, Menlo, monospace;
 }
-
-/* Base Reset */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -69,8 +50,8 @@ html, body {
   background-color: var(--bg-main);
   color: var(--text-primary);
   font-family: var(--font-base);
-  font-size: 15px;                 /* Readable Base Body Font Size */
-  line-height: 1.55;               /* Comfortable Line Height */
+  font-size: 15px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -94,9 +75,6 @@ input, select, textarea {
   font-family: inherit;
 }
 
-/* ==========================================================================
-   AUTHENTICATION VIEW (Clean College Portal)
-   ========================================================================== */
 .simple-auth-container {
   min-height: 100vh;
   display: flex;
@@ -139,6 +117,53 @@ input, select, textarea {
   text-transform: uppercase;
 }
 
+.role-select-field {
+  margin-bottom: 0.85rem;
+}
+
+.role-select-field label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.simple-role-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 2.2rem 0.7rem 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.simple-role-select:hover {
+  border-color: var(--color-primary);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.simple-role-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+  background: #ffffff;
+}
+
+.simple-role-select option {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  padding: 0.5rem;
+}
+
 .simple-role-buttons {
   display: flex;
   gap: 0.5rem;
@@ -166,6 +191,7 @@ input, select, textarea {
 }
 
 .role-btn.active-admin,
+.role-btn.active-ambulance,
 .role-btn.active-hospital,
 .role-btn.active-police {
   background: var(--bg-sidebar);
@@ -206,7 +232,7 @@ input, select, textarea {
 }
 
 .form-title {
-  font-size: 1.15rem;             /* 18px */
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 0.04em;
@@ -247,7 +273,7 @@ input, select, textarea {
 }
 
 .input-field label {
-  font-size: 0.95rem;             /* 14.5px */
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -257,7 +283,7 @@ input, select, textarea {
 .input-field textarea {
   width: 100%;
   padding: 0.65rem 0.85rem;
-  font-size: 0.95rem;             /* 14.5-15px */
+  font-size: 0.95rem;
   color: var(--text-primary);
   background: var(--bg-input);
   border: 1px solid var(--border-color);
@@ -276,7 +302,7 @@ input, select, textarea {
 .simple-submit-btn {
   background: var(--color-primary);
   color: var(--text-inverse);
-  font-size: 0.95rem;             /* 14.5px */
+  font-size: 0.95rem;
   font-weight: 600;
   padding: 0.75rem 1.25rem;
   border-radius: var(--radius-sm);
@@ -313,17 +339,12 @@ input, select, textarea {
   text-decoration: underline;
 }
 
-/* ==========================================================================
-   APPLICATION SHELL & LAYOUT
-   ========================================================================== */
 .app-layout {
   display: flex;
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
 }
-
-/* 1. SIDEBAR */
 .sidebar {
   width: 260px;
   min-width: 260px;
@@ -363,7 +384,7 @@ input, select, textarea {
 }
 
 .logo-title {
-  font-size: 1.3rem;              /* 20px */
+  font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--text-inverse);
@@ -371,7 +392,7 @@ input, select, textarea {
 }
 
 .logo-sub {
-  font-size: 0.76rem;             /* 11.5px */
+  font-size: 0.76rem;
   font-weight: 600;
   color: #94A3B8;
   letter-spacing: 0.04em;
@@ -388,7 +409,7 @@ input, select, textarea {
 }
 
 .nav-group-title {
-  font-size: 0.78rem;             /* 12px */
+  font-size: 0.78rem;
   font-weight: 700;
   color: #94A3B8;
   letter-spacing: 0.08em;
@@ -402,7 +423,7 @@ input, select, textarea {
   gap: 0.75rem;
   width: 100%;
   padding: 0.65rem 0.85rem;
-  font-size: 0.95rem;             /* 14.5px readable nav text */
+  font-size: 0.95rem;
   font-weight: 500;
   color: #CBD5E1;
   border-radius: var(--radius-sm);
@@ -433,7 +454,7 @@ input, select, textarea {
 .nav-badge-pill {
   margin-left: auto;
   padding: 0.18rem 0.55rem;
-  font-size: 0.76rem;             /* 12px */
+  font-size: 0.76rem;
   font-weight: 700;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.15);
@@ -449,8 +470,6 @@ input, select, textarea {
   background: rgba(0, 0, 0, 0.25);
   color: #CBD5E1;
 }
-
-/* Sidebar Footer */
 .sidebar-footer {
   padding: 1rem 1.15rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
@@ -487,7 +506,7 @@ input, select, textarea {
 }
 
 .sidebar-user-name {
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-inverse);
   white-space: nowrap;
@@ -496,7 +515,7 @@ input, select, textarea {
 }
 
 .sidebar-user-role-badge {
-  font-size: 0.76rem;             /* 12px */
+  font-size: 0.76rem;
   font-weight: 600;
   color: #94A3B8;
   letter-spacing: 0.04em;
@@ -519,8 +538,6 @@ input, select, textarea {
   background: rgba(217, 83, 79, 0.2);
   color: #F87171;
 }
-
-/* 2. MAIN CONTENT AREA */
 .main-content {
   flex: 1;
   display: flex;
@@ -528,8 +545,6 @@ input, select, textarea {
   overflow-y: auto;
   background-color: var(--bg-main);
 }
-
-/* 3. COMPACT TOPBAR */
 .topbar {
   height: 64px;
   min-height: 64px;
@@ -559,7 +574,7 @@ input, select, textarea {
 }
 
 .topbar-heading {
-  font-size: 1.45rem;             /* 22-23px */
+  font-size: 1.45rem;
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
@@ -578,7 +593,7 @@ input, select, textarea {
   align-items: center;
   gap: 0.45rem;
   padding: 0.35rem 0.75rem;
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   font-weight: 700;
   border-radius: var(--radius-sm);
   background: var(--color-emergency-light);
@@ -615,13 +630,13 @@ input, select, textarea {
 }
 
 .user-name {
-  font-size: 0.95rem;             /* 14.5px */
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .user-role-tag {
-  font-size: 0.76rem;             /* 12px */
+  font-size: 0.76rem;
   font-weight: 700;
   padding: 0.18rem 0.48rem;
   border-radius: 3px;
@@ -642,12 +657,10 @@ input, select, textarea {
   background: var(--color-primary-light);
   color: var(--color-primary);
 }
-
-/* 4. CONTENT SECTIONS / TABS */
 .content-tab {
   display: none;
   padding: 1.75rem 2rem;
-  max-width: 1600px;              /* Expanded to utilize screen width */
+  max-width: 1600px;
   margin: 0 auto;
   width: 100%;
 }
@@ -656,9 +669,6 @@ input, select, textarea {
   display: block;
 }
 
-/* ==========================================================================
-   CARDS, TABLES & COMPONENT SYSTEM
-   ========================================================================== */
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -678,7 +688,7 @@ input, select, textarea {
 }
 
 .card-header-flex h3 {
-  font-size: 1.25rem;             /* 19px Section Heading */
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
@@ -687,16 +697,14 @@ input, select, textarea {
 }
 
 .section-desc {
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   color: var(--text-secondary);
   margin-top: 0.3rem;
   line-height: 1.5;
 }
-
-/* 1. STATISTIC SUMMARY CARDS (Dashboard Grid) */
 .stats-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1.25rem;
   margin-bottom: 1.5rem;
 }
@@ -718,7 +726,7 @@ input, select, textarea {
 }
 
 .kpi-label {
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -727,7 +735,7 @@ input, select, textarea {
 }
 
 .kpi-value {
-  font-size: 2.1rem;              /* 32px Bold Value */
+  font-size: 2.1rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.1;
@@ -735,7 +743,7 @@ input, select, textarea {
 }
 
 .kpi-subtext {
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   color: var(--text-muted);
 }
 
@@ -745,8 +753,6 @@ input, select, textarea {
 .kpi-card-success .kpi-value {
   color: var(--color-success);
 }
-
-/* 2. QUICK ACTION BAR */
 .quick-actions-bar {
   display: flex;
   gap: 0.85rem;
@@ -759,7 +765,7 @@ input, select, textarea {
   align-items: center;
   gap: 0.5rem;
   padding: 0.55rem 1rem;
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-primary);
   background: var(--bg-card);
@@ -774,8 +780,6 @@ input, select, textarea {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
-
-/* 3. DATA TABLES & ALERTS TABLE LAYOUT */
 .table-wrapper {
   overflow-x: auto;
   overflow-y: hidden;
@@ -792,7 +796,7 @@ input, select, textarea {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.95rem;             /* 14.5px Table Text */
+  font-size: 0.95rem;
   text-align: left;
 }
 
@@ -800,7 +804,7 @@ input, select, textarea {
   background: var(--bg-card-subtle);
   color: #475569;
   font-weight: 600;
-  font-size: 0.88rem;             /* 13.5px Table Header */
+  font-size: 0.88rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 0.85rem 1rem;
@@ -813,12 +817,12 @@ input, select, textarea {
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-primary);
   vertical-align: middle;
-  font-size: 0.95rem;             /* 14.5px Cell text */
+  font-size: 0.95rem;
   line-height: 1.5;
 }
 
 .data-table tbody td strong {
-  font-size: 0.95rem;             /* 14.5-15px Bold IDs */
+  font-size: 0.95rem;
   font-weight: 700;
   color: #1E293B;
 }
@@ -839,14 +843,10 @@ input, select, textarea {
   background-color: var(--color-primary-light) !important;
   border-left: 4px solid var(--color-primary);
 }
-
-/* Specific Alerts Table Styling for Comfortable Widths */
 .alerts-data-table {
-  min-width: 1350px;              /* Ensures no column compression */
+  min-width: 1350px;
   table-layout: auto;
 }
-
-/* Sticky First Column so Incident ID is Always Visible */
 .sticky-first-col thead th:first-child,
 .sticky-first-col tbody td:first-child {
   position: sticky;
@@ -867,8 +867,6 @@ input, select, textarea {
 .sticky-first-col tbody tr.row-selected td:first-child {
   background: var(--color-primary-light) !important;
 }
-
-/* 4. FILTER TABS & CHIPS */
 .incident-filter-bar,
 .alerts-filter-bar {
   display: inline-flex;
@@ -882,7 +880,7 @@ input, select, textarea {
 .filter-tab-btn,
 .filter-chip {
   padding: 0.45rem 0.85rem;
-  font-size: 0.88rem;             /* 13.5px */
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
@@ -901,8 +899,6 @@ input, select, textarea {
   color: var(--text-inverse);
   box-shadow: var(--shadow-sm);
 }
-
-/* 5. SEARCH INPUT WRAPPER */
 .search-input-wrap {
   position: relative;
   display: flex;
@@ -918,7 +914,7 @@ input, select, textarea {
 
 .table-search-input {
   padding: 0.55rem 0.85rem 0.55rem 2.4rem;
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   background: var(--bg-input);
@@ -932,15 +928,13 @@ input, select, textarea {
   border-color: var(--color-primary);
   width: 320px;
 }
-
-/* 6. BUTTONS */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
   padding: 0.5rem 1rem;
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   transition: all 0.15s ease;
@@ -973,7 +967,7 @@ input, select, textarea {
   border: 1px solid var(--border-color);
   color: var(--color-primary);
   padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   min-height: 32px;
 }
 .btn-panel-action:hover {
@@ -1001,7 +995,7 @@ input, select, textarea {
 
 .btn-sm {
   padding: 0.38rem 0.7rem;
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   min-height: 32px;
 }
 
@@ -1009,14 +1003,12 @@ input, select, textarea {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* 7. BADGES & STATUS PILLS (Minimum 12.5-13px) */
 .badge,
 .badge-tag {
   display: inline-flex;
   align-items: center;
   padding: 0.28rem 0.6rem;
-  font-size: 0.82rem;             /* 12.5-13px */
+  font-size: 0.82rem;
   font-weight: 600;
   border-radius: 4px;
   letter-spacing: 0.02em;
@@ -1056,7 +1048,7 @@ input, select, textarea {
   align-items: center;
   gap: 0.4rem;
   padding: 0.28rem 0.65rem;
-  font-size: 0.82rem;             /* 12.5-13px */
+  font-size: 0.82rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: var(--bg-card-subtle);
@@ -1076,7 +1068,7 @@ input, select, textarea {
   align-items: center;
   gap: 0.4rem;
   padding: 0.28rem 0.65rem;
-  font-size: 0.82rem;             /* 12.5-13px */
+  font-size: 0.82rem;
   font-weight: 600;
   background: #F1F5F9;
   color: var(--text-primary);
@@ -1090,7 +1082,7 @@ input, select, textarea {
   align-items: center;
   margin-left: 0.45rem;
   padding: 0.15rem 0.45rem;
-  font-size: 0.74rem;             /* 11.5px */
+  font-size: 0.74rem;
   font-weight: 700;
   background: #E2E8F0;
   color: var(--text-secondary);
@@ -1102,7 +1094,7 @@ input, select, textarea {
   align-items: center;
   gap: 0.4rem;
   padding: 0.35rem 0.75rem;
-  font-size: 0.82rem;             /* 12.5px */
+  font-size: 0.82rem;
   font-weight: 700;
   border-radius: var(--radius-sm);
   background: var(--bg-card-subtle);
@@ -1119,7 +1111,7 @@ input, select, textarea {
 
 .telemetry-coord {
   font-family: var(--font-mono);
-  font-size: 0.88rem;             /* 13.5px */
+  font-size: 0.88rem;
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
@@ -1127,9 +1119,6 @@ input, select, textarea {
   white-space: nowrap;
 }
 
-/* ==========================================================================
-   INCIDENT DETAIL PANEL & PROGRESS TIMELINE
-   ========================================================================== */
 .incident-detail-panel {
   background: var(--bg-card-subtle);
   border: 1px solid var(--border-color);
@@ -1147,7 +1136,7 @@ input, select, textarea {
 }
 
 .detail-panel-title {
-  font-size: 1.2rem;              /* 18.5px */
+  font-size: 1.2rem;
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
@@ -1181,7 +1170,7 @@ input, select, textarea {
 }
 
 .detail-label {
-  font-size: 0.82rem;             /* 12.5px */
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1190,12 +1179,10 @@ input, select, textarea {
 }
 
 .detail-value {
-  font-size: 1rem;                /* 15px */
+  font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
 }
-
-/* 5-Step Incident Progress Timeline */
 .incident-stepper {
   display: flex;
   align-items: center;
@@ -1225,7 +1212,7 @@ input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.88rem;             /* 13.5px */
+  font-size: 0.88rem;
   font-weight: 700;
   margin-bottom: 0.45rem;
   transition: all 0.2s ease;
@@ -1244,7 +1231,7 @@ input, select, textarea {
 }
 
 .step-label {
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-align: center;
@@ -1269,9 +1256,6 @@ input, select, textarea {
   z-index: 1;
 }
 
-/* ==========================================================================
-   RESPONDER OPERATIONS: HOSPITAL & POLICE CARDS
-   ========================================================================== */
 .response-card {
   border-left: 4px solid var(--border-color);
   transition: box-shadow 0.15s ease;
@@ -1297,12 +1281,12 @@ input, select, textarea {
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
 }
 
 .hud-stat-chip {
   padding: 0.28rem 0.65rem;
-  font-size: 0.82rem;             /* 12.5px */
+  font-size: 0.82rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: var(--bg-card-subtle);
@@ -1343,18 +1327,15 @@ input, select, textarea {
 }
 
 .emergency-banner-text strong {
-  font-size: 1rem;                /* 15px */
+  font-size: 1rem;
   color: var(--color-emergency);
 }
 
 .emergency-banner-text span {
-  font-size: 0.88rem;             /* 13.5px */
+  font-size: 0.88rem;
   color: var(--text-secondary);
 }
 
-/* ==========================================================================
-   VIDEO ACCIDENT DETECTION LABORATORY
-   ========================================================================== */
 .detection-grid {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
@@ -1371,7 +1352,7 @@ input, select, textarea {
 .file-picker-btn {
   background: var(--bg-sidebar);
   color: var(--text-inverse);
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   font-weight: 600;
   padding: 0.55rem 1rem;
   border-radius: var(--radius-sm);
@@ -1391,7 +1372,7 @@ input, select, textarea {
 }
 
 .file-name {
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   color: var(--text-secondary);
   font-style: italic;
 }
@@ -1434,14 +1415,14 @@ input, select, textarea {
 }
 
 .scanning-hud-box .hud-title {
-  font-size: 0.95rem;             /* 14.5px */
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--color-primary);
   margin-top: 0.65rem;
 }
 
 .scanning-hud-box .hud-subtitle {
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   color: var(--text-secondary);
   margin-top: 0.35rem;
 }
@@ -1468,7 +1449,7 @@ input, select, textarea {
   background: var(--color-emergency);
   color: var(--text-inverse);
   padding: 0.35rem 0.75rem;
-  font-size: 0.82rem;             /* 12.5px */
+  font-size: 0.82rem;
   font-weight: 700;
   border-radius: var(--radius-sm);
   display: inline-flex;
@@ -1489,7 +1470,7 @@ input, select, textarea {
 
 .hud-action-btn {
   padding: 0.45rem 0.85rem;
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: rgba(30, 41, 59, 0.92);
@@ -1541,7 +1522,7 @@ input, select, textarea {
 .meter-head {
   display: flex;
   justify-content: space-between;
-  font-size: 0.88rem;             /* 13.5px */
+  font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 0.45rem;
@@ -1581,14 +1562,14 @@ input, select, textarea {
 }
 
 .empty-stream-state h4 {
-  font-size: 1.15rem;             /* 18px */
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 0.35rem;
 }
 
 .empty-stream-state p {
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   max-width: 420px;
   margin: 0 auto;
 }
@@ -1606,9 +1587,6 @@ input, select, textarea {
   margin: 0 auto 0.85rem;
 }
 
-/* ==========================================================================
-   LEAFLET TACTICAL MAP
-   ========================================================================== */
 .live-map {
   width: 100%;
   height: 540px;
@@ -1639,8 +1617,6 @@ input, select, textarea {
   background: var(--color-primary-light);
   border-color: var(--color-primary);
 }
-
-/* Leaflet Overrides for College Clean Aesthetic */
 .leaflet-popup-content-wrapper {
   border-radius: var(--radius-sm) !important;
   box-shadow: var(--shadow-md) !important;
@@ -1654,9 +1630,6 @@ input, select, textarea {
   font-size: 0.92rem !important;
 }
 
-/* ==========================================================================
-   DISPATCH TELEMETRY & STEPPER EXTENSIONS
-   ========================================================================== */
 .timeline-stepper-box {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -1666,7 +1639,7 @@ input, select, textarea {
 }
 
 .stepper-header {
-  font-size: 0.88rem;             /* 13.5px */
+  font-size: 0.88rem;
   font-weight: 700;
   color: var(--text-primary);
   text-transform: uppercase;
@@ -1690,7 +1663,7 @@ input, select, textarea {
 
 .step-chip {
   padding: 0.3rem 0.65rem;
-  font-size: 0.82rem;             /* 12.5px */
+  font-size: 0.82rem;
   font-weight: 600;
   border-radius: 4px;
   background: #E2E8F0;
@@ -1726,7 +1699,7 @@ input, select, textarea {
 }
 
 .dispatch-metric-card label {
-  font-size: 0.78rem;             /* 12px */
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1735,13 +1708,388 @@ input, select, textarea {
 }
 
 .dispatch-metric-card strong {
-  font-size: 1rem;                /* 15px */
+  font-size: 1rem;
   color: var(--text-primary);
 }
 
-/* ==========================================================================
-   AUDIT HISTORY TIMELINE MODAL
-   ========================================================================== */
+.driver-unit-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 1.1rem 1.25rem;
+  margin-top: 1.15rem;
+}
+
+.driver-unit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.driver-unit-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.driver-unit-input {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.75rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.driver-unit-input:focus {
+  border-color: var(--color-primary);
+}
+
+.departure-action-banner {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(16, 185, 129, 0.08));
+  border: 1.5px solid rgba(37, 99, 235, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+  margin: 1.15rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.departure-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.departure-banner-info strong {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.departure-banner-info span {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.triage-console-box {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.04), rgba(245, 158, 11, 0.05));
+  border: 1.5px solid rgba(239, 68, 68, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.triage-console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.18);
+  padding-bottom: 0.65rem;
+}
+
+.triage-console-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #DC2626;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.triage-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.15rem;
+  margin-bottom: 1.1rem;
+}
+
+.triage-field-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 0.45rem;
+}
+
+.triage-pill-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.triage-pill-btn {
+  padding: 0.42rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.triage-pill-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.triage-pill-btn.selected {
+  background: #DC2626;
+  color: #ffffff !important;
+  border-color: #B91C1C !important;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35);
+}
+
+.triage-pill-btn.selected-amber {
+  background: #D97706;
+  color: #ffffff !important;
+  border-color: #B45309 !important;
+  box-shadow: 0 2px 6px rgba(217, 119, 6, 0.35);
+}
+
+.triage-pill-btn.selected-blue {
+  background: #2563EB;
+  color: #ffffff !important;
+  border-color: #1D4ED8 !important;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+}
+
+.triage-pill-btn.selected-green {
+  background: #16A34A;
+  color: #ffffff !important;
+  border-color: #15803D !important;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.35);
+}
+
+.hotline-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563EB;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.hotline-quick-btn:hover {
+  background: #2563EB;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
+
+.triage-report-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.85rem;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #065F46;
+}
+
+.hospital-assignment-box {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+}
+
+.hospital-assignment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.65rem;
+}
+
+.hospital-assignment-title {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.hospital-assignment-alert {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+
+.hospital-assignment-alert.warning {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #B45309;
+}
+
+.hospital-assignment-alert.danger {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #DC2626;
+}
+
+.hospital-card-recommended {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(16, 185, 129, 0.04));
+  border: 1.5px solid rgba(37, 99, 235, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 1.15rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.hospital-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.badge-recommended {
+  background: #2563EB;
+  color: #ffffff;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dest-status-pill {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dest-status-pill.confirmed {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #065F46;
+}
+
+.dest-status-pill.pending {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #92400E;
+}
+
+.hospital-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+  margin: 0.85rem 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+}
+
+.hospital-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.hospital-meta-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hospital-meta-val {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.amb-dest-map-container {
+  width: 100%;
+  height: 220px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  margin: 0.85rem 0;
+  overflow: hidden;
+  background: #0f172a;
+}
+
+.hospital-alternatives-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.65rem;
+  font-size: 0.84rem;
+}
+
+.hospital-alternatives-table th {
+  background: var(--bg-card-subtle);
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hospital-alternatives-table td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.hospital-alternatives-table tr:hover {
+  background: rgba(37, 99, 235, 0.03);
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1811,14 +2159,14 @@ input, select, textarea {
 }
 
 .timeline-event-name {
-  font-size: 0.95rem;             /* 14.5px */
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-primary);
   text-transform: capitalize;
 }
 
 .timeline-time {
-  font-size: 0.82rem;             /* 12.5px */
+  font-size: 0.82rem;
   color: var(--text-muted);
 }
 
@@ -1827,15 +2175,12 @@ input, select, textarea {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: 0.65rem 0.85rem;
-  font-size: 0.85rem;             /* 13px */
+  font-size: 0.85rem;
   color: var(--text-secondary);
   margin-top: 0.45rem;
   line-height: 1.5;
 }
 
-/* ==========================================================================
-   TOAST NOTIFICATION STACK
-   ========================================================================== */
 .toast-container {
   position: fixed;
   bottom: 1.5rem;
@@ -1859,7 +2204,7 @@ input, select, textarea {
   align-items: center;
   justify-content: space-between;
   gap: 0.85rem;
-  font-size: 0.92rem;             /* 14px */
+  font-size: 0.92rem;
   font-weight: 500;
   color: var(--text-primary);
   animation: toastIn 0.2s ease forwards;
@@ -1902,8 +2247,6 @@ input, select, textarea {
 .toast-close-btn:hover {
   color: var(--text-primary);
 }
-
-/* Semantic Utility Classes */
 .text-red, .text-danger { color: var(--color-emergency) !important; }
 .text-amber, .text-warning { color: var(--color-pending) !important; }
 .text-cyan, .text-info, .text-blue { color: var(--color-primary) !important; }
@@ -1920,13 +2263,7 @@ input, select, textarea {
   font-weight: 500;
 }
 
-/* ==========================================================================
-   RESPONSIVE DESIGN (Desktop, Laptop 1366x768, Tablet, Mobile)
-   ========================================================================== */
 @media (max-width: 1400px) {
-  .stats-kpi-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
   .dispatch-telemetry-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1982,9 +2319,6 @@ input, select, textarea {
   }
 }
 
-/* ==========================================================================
-   AUTO-DISPATCH EMERGENCY COUNTDOWN COMPONENT
-   ========================================================================== */
 .auto-dispatch-banner {
   background: #FFF5F5;
   border: 1px solid rgba(217, 83, 79, 0.4);
@@ -2090,5 +2424,39 @@ input, select, textarea {
   background: #FEE2E2;
   border-color: var(--color-emergency);
   color: var(--color-emergency-hover);
+}
+.decline-reason-chip {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.decline-reason-chip:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #ef4444;
+  color: #dc2626;
+}
+.decline-reason-chip.selected {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+.hospital-declined-banner {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin: 0.85rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
