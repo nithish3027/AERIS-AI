@@ -494,9 +494,11 @@ input, select, textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   color: var(--text-inverse);
   flex-shrink: 0;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+  user-select: none;
 }
 
 .sidebar-user-info {
@@ -530,13 +532,19 @@ input, select, textarea {
   justify-content: center;
   border-radius: var(--radius-sm);
   color: #CBD5E1;
-  font-size: 1rem;
+  font-size: 1.15rem;
+  line-height: 1;
   transition: all 0.15s ease;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
 }
 
 .sidebar-logout-btn:hover {
-  background: rgba(217, 83, 79, 0.2);
+  background: rgba(217, 83, 79, 0.25);
   color: #F87171;
+  transform: scale(1.08);
 }
 .main-content {
   flex: 1;

@@ -675,6 +675,49 @@ export async function getAccidentRecommendedHospitals(incidentId, { maxRadiusKm 
   };
 }
 
+export function normalizeHospitalReference(value) {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized || null;
+  }
+
+  if (typeof value === 'object') {
+    const nestedId = value._id || value.id || value.hospitalId || value.hospitalRegNo || value.hospitalName;
+    if (nestedId !== undefined && nestedId !== null && nestedId !== '') {
+      return String(nestedId).trim();
+    }
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+export async function getHospitalByReference(reference) {
+  const normalizedReference = normalizeHospitalReference(reference);
+  if (!normalizedReference) return null;
+
+  const directLookup = await User.findById(normalizedReference).lean();
+  if (directLookup && directLookup.role === 'hospital') {
+    return directLookup;
+  }
+
+  const allHospitals = await User.find({ role: 'hospital' }).select('_id name email details').lean();
+  const lookupValue = normalizedReference.toLowerCase();
+
+  return allHospitals.find((hospital) => {
+    const matchesId = hospital && [hospital._id, hospital.id, hospital.details?._id, hospital.details?.hospitalId]
+      .some((candidate) => candidate && String(candidate).trim().toLowerCase() === lookupValue);
+
+    const matchesRegNo = hospital?.details?.hospitalRegNo && String(hospital.details.hospitalRegNo).trim().toLowerCase() === lookupValue;
+    const matchesName = (hospital?.details?.hospitalName || hospital?.name || '')
+      && String(hospital.details?.hospitalName || hospital.name).trim().toLowerCase() === lookupValue;
+
+    return matchesId || matchesRegNo || matchesName;
+  }) || null;
+}
+
 export async function assignDestinationHospital(incidentId, user, { hospitalId, reason, socketServer } = {}) {
   const filter = buildIncidentFilter(incidentId);
   const incident = await Incident.findOne(filter);
@@ -684,18 +727,21 @@ export async function assignDestinationHospital(incidentId, user, { hospitalId, 
     throw error;
   }
 
-  if (!hospitalId) {
+  const normalizedHospitalId = normalizeHospitalReference(hospitalId);
+  if (!normalizedHospitalId) {
     const error = new Error('Destination hospital ID is required.');
     error.status = 400;
     throw error;
   }
 
-  const hospitalUser = await User.findById(hospitalId).lean();
+  const hospitalUser = await getHospitalByReference(normalizedHospitalId);
   if (!hospitalUser || hospitalUser.role !== 'hospital') {
     const error = new Error('Selected hospital is not a registered hospital in AERIS.');
     error.status = 400;
     throw error;
   }
+
+  const resolvedHospitalId = hospitalUser._id || hospitalUser.id || hospitalUser.sub || normalizedHospitalId;
 
   const hospLat = Number(hospitalUser.details?.latitude);
   const hospLng = Number(hospitalUser.details?.longitude);
@@ -730,13 +776,13 @@ export async function assignDestinationHospital(incidentId, user, { hospitalId, 
   const hospitalName = hospitalUser.details?.hospitalName || hospitalUser.name || 'Trauma Facility';
 
   const currentAssignedId = incident.dispatch?.assignedHospitalId ? String(incident.dispatch.assignedHospitalId) : null;
-  const isSameHospital = currentAssignedId && currentAssignedId === String(hospitalId);
+  const isSameHospital = currentAssignedId && currentAssignedId === String(resolvedHospitalId);
 
   if (isSameHospital && incident.dispatch?.status === 'ASSIGNED') {
     return incident.toObject();
   }
 
-  const isReassignment = Boolean(currentAssignedId && currentAssignedId !== String(hospitalId));
+  const isReassignment = Boolean(currentAssignedId && currentAssignedId !== String(resolvedHospitalId));
   const previousHospitalName = incident.dispatch?.assignedHospitalName || 'None';
   const effectiveReason = reason || (isReassignment ? 'Destination reassigned by ambulance operator' : 'Accident location nearest facility confirmed');
 
@@ -760,7 +806,7 @@ export async function assignDestinationHospital(incidentId, user, { hospitalId, 
     },
   };
 
-  incident.dispatch.assignedHospitalId = hospitalId;
+  incident.dispatch.assignedHospitalId = resolvedHospitalId;
   incident.dispatch.assignedHospitalName = hospitalName;
   incident.dispatch.assignedAt = new Date();
   incident.dispatch.status = 'ASSIGNED';
@@ -795,7 +841,7 @@ export async function assignDestinationHospital(incidentId, user, { hospitalId, 
     socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('incident:updated', result);
     socketServer.to(['role:admin', 'role:police', 'role:hospital']).emit('dispatch:assigned', {
       incidentId: result.accidentId,
-      hospitalId,
+      hospitalId: resolvedHospitalId,
       hospitalName,
       straightLineDistanceKm: distKm,
       reason: effectiveReason,

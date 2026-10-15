@@ -550,6 +550,16 @@
       topAvatar.innerHTML = `<i class="${avatarIcon}"></i>`;
     }
 
+    const sideAvatar = document.getElementById('sidebar-user-avatar');
+    if (sideAvatar) {
+      let roleEmoji = '👤';
+      if (user.role === 'ambulance') roleEmoji = '🚑';
+      else if (user.role === 'hospital') roleEmoji = '🏥';
+      else if (user.role === 'police') roleEmoji = '👮';
+      else if (user.role === 'admin') roleEmoji = '⚙️';
+      sideAvatar.textContent = roleEmoji;
+    }
+
     const isAmbulance = user.role === 'ambulance';
     const isHospital = user.role === 'hospital';
     const isPolice = user.role === 'police';
