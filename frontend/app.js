@@ -375,7 +375,7 @@
         if (demo === 'ambulance') {
           selectRole('ambulance');
           if (emailEl) emailEl.value = 'ambulance@aeris.com';
-          if (passEl) passEl.value = 'ambulance123';
+          if (passEl) passEl.value = '12345678';
         } else if (demo === 'police') {
           selectRole('police');
           if (emailEl) emailEl.value = 'perambalur@police.com';
@@ -1662,7 +1662,9 @@
 
     container.innerHTML = visible.map((inc) => {
       const id = inc.accidentId || inc.id || inc._id;
-      const status = inc.policeResponse?.status || inc.policeStatus || 'Pending';
+      const status = inc.policeResponse?.status || inc.policeStatus || inc.policeAlertStatus || 'Pending';
+      const hasAcknowledged = ['Acknowledged', 'Accepted', 'Response Started', 'Resolved'].includes(status);
+      const hasDispatched = ['Response Started', 'Resolved'].includes(status);
       const videoUrl = getIncidentVideoUrl(inc);
 
       return `
@@ -1717,8 +1719,8 @@
           <div class="response-actions">
             ${videoUrl ? `<button class="btn btn-secondary" onclick="app.openVideoModal('${id}')"><i class="fa-solid fa-play"></i> Watch Clip</button>` : ''}
             ${Number.isFinite(inc.latitude) ? `<a class="btn btn-secondary" href="https://www.google.com/maps?q=${inc.latitude},${inc.longitude}" target="_blank" rel="noreferrer"><i class="fa-solid fa-map-location-dot"></i> External Map</a>` : ''}
-            <button class="btn btn-primary" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Acknowledged')"><i class="fa-solid fa-check"></i> Acknowledge Alert</button>
-            <button class="btn btn-glow-primary" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Response Started', { unit: '${state.user?.details?.patrolUnit || 'Patrol Unit 42'}', organization: '${state.user?.details?.stationName || 'Precinct 1'}' })"><i class="fa-solid fa-car-burst"></i> Dispatch Patrol Unit</button>
+            <button class="btn ${hasAcknowledged ? 'btn-success' : 'btn-primary'}" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Acknowledged')"><i class="fa-solid fa-check"></i> Acknowledge Alert</button>
+            <button class="btn ${hasDispatched ? 'btn-success' : 'btn-glow-primary'}" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Response Started', { unit: '${state.user?.details?.patrolUnit || 'Patrol Unit 42'}', organization: '${state.user?.details?.stationName || 'Precinct 1'}' })"><i class="fa-solid fa-car-burst"></i> Dispatch Patrol Unit</button>
             <button class="btn btn-secondary" onclick="app.updateIncidentStatus('${id}', 'policeStatus', 'Resolved')"><i class="fa-solid fa-circle-check"></i> Clear & Conclude Site</button>
           </div>
           ${inc.isDemo ? '<p class="demo-warning" style="margin-top: 1rem;"><i class="fa-solid fa-circle-info"></i> DEMO SIMULATION: Testing protocol active.</p>' : ''}
